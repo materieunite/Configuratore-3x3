@@ -83,7 +83,13 @@ const M = {
 };
 const panelMats = {}; // name -> material with CanvasTexture
 
+const _wood = new Map();
 function woodTexture(tint) {
+  const key = tint || 'naturale'; if (_wood.has(key)) return _wood.get(key);
+  const R = rng(42), _rnd = Math.random; Math.random = R; // venatura sempre uguale
+  try { const t = _woodTexture(tint); _wood.set(key, t); return t; } finally { Math.random = _rnd; }
+}
+function _woodTexture(tint) {
   const W = 1024, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   const base = tint ? mix(tint, '#b98a57', 0.35) : '#c49a68';
@@ -130,22 +136,6 @@ new GLTFLoader().load('./stand.glb', (gltf) => {
   applyAll();
 }, undefined, (e) => { $('#loading').textContent = 'Errore nel caricamento del modello'; console.error(e); });
 
-// ---------------- varianti (tasto Rigenera) ----------------
-// variante 0 = proposta di partenza; ogni Rigenera cambia ruoli dei colori e disegni.
-function rng(seed) { let a = (seed * 2654435761) >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-const WALL_STYLES = ['blocchi', 'fasce', 'sfumatura', 'diagonale', 'chevron', 'tinta'];
-function variant() {
-  const v = state.variant || 0, r = rng(v + 1);
-  const base = [state.colors.primary, state.colors.secondary, state.colors.accent];
-  const extra = (state.palette || []).filter(h => base.every(b => dist(hexToRgb(b), hexToRgb(h)) > 50));
-  if (v === 0) return { P: base[0], S: base[1], A: base[2], wall: 'blocchi', alzata: 'testo', nicchie: 'alterne' };
-  const pool = [...base, ...extra.slice(0, 2)];
-  const pick = () => pool.splice(Math.floor(r() * pool.length), 1)[0];
-  const P = v % 3 === 0 ? base[0] : pick(); const rest = pool.filter(h => h !== P);
-  const S = rest[Math.floor(r() * rest.length)] || base[1]; const A = rest.filter(h => h !== S)[Math.floor(r() * Math.max(1, rest.length - 1))] || base[2];
-  return { P, S, A, wall: WALL_STYLES[v % WALL_STYLES.length], alzata: ['testo', 'logo', 'blocchi'][Math.floor(r() * 3)], nicchie: ['alterne', 'sfumate', 'una'][Math.floor(r() * 3)] };
-}
-
 // ---------------- pareti stampate (premium) ----------------
 // UV proiettate: parete di fondo vista da davanti, pareti laterali viste da fuori.
 // Atlante: [0,0.5) fondo · [0.5,0.75) sinistra · [0.75,1] destra; v = quota.
@@ -168,8 +158,8 @@ function wallArt(kind) {
   // disegno in proporzioni reali (3,04 x 2,56 m), poi stirato nell'atlante.
   // Solo campiture di colore: sui pannelli a zig-zag foto, loghi e scritte si deformano.
   const c = document.createElement('canvas'); c.width = 1520; c.height = 1280; const g = c.getContext('2d');
-  const V = variant(), W = c.width, H = c.height, style = V.wall;
-  const cols = kind === 'fondo' ? [V.P, V.S, V.A] : kind === 'sinistra' ? [V.S, V.A, V.P] : [V.S, V.P, V.A];
+  const D = computeDesign(), W = c.width, H = c.height, style = D.pareti.style, [p0, p1, p2] = D.pareti.c;
+  const cols = kind === 'fondo' ? [p0, p1, p2] : kind === 'sinistra' ? [p1, p2, p0] : [p1, p0, p2];
   const [a, b, d] = cols;
   if (style === 'tinta') { g.fillStyle = kind === 'fondo' ? a : b; g.fillRect(0, 0, W, H); }
   else if (style === 'blocchi') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.fillRect(0, H * 0.58, W, H * 0.42); g.fillStyle = d; g.fillRect(0, H * 0.55, W, H * 0.03); }
@@ -178,7 +168,7 @@ function wallArt(kind) {
   else if (style === 'diagonale') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill(); g.strokeStyle = d; g.lineWidth = 36; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.stroke(); }
   else if (style === 'chevron') { g.fillStyle = a; g.fillRect(0, 0, W, H); const step = 220; for (let y = H * 0.25, i = 0; y < H + step; y += step, i++) { g.strokeStyle = i % 2 ? d : b; g.lineWidth = 70; g.beginPath(); for (let x = -step, k = 0; x <= W + step; x += step / 2, k++) g.lineTo(x, y + (k % 2 ? -60 : 60)); g.stroke(); } }
   // fascia in alto nel colore principale: incornicia il banner
-  if (kind === 'fondo') { g.fillStyle = V.P; g.fillRect(0, 0, W, H * 0.14); }
+  if (kind === 'fondo') { g.fillStyle = D.pareti.band; g.fillRect(0, 0, W, H * 0.14); }
   return c;
 }
 function wallTexture() {
@@ -223,83 +213,209 @@ function brandWord(g, x, y, w, h, color) {
   fitText(g, t, w, h * 0.6, 700); g.fillText(t, x + w / 2, y + h / 2);
 }
 
-function applyAll() {
-  if (!model) return;
-  const C = state.colors;
-  const logoLum = state.logo ? imageLuminance(state.logo) : 0.1;
+// ---------------- motore delle grafiche: aree, semi, blocchi ----------------
+// Ogni area ha un seme: 0 = proposta di partenza. ↻ cambia il seme di un'area,
+// Rigenera cambia quelli delle aree non bloccate scegliendo la combinazione migliore.
+function rng(seed) { let a = (seed * 2654435761) >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const AREAS = [
+  { id: 'colori', nome: 'Colori', regen: true },
+  { id: 'logo', nome: 'Logo', regen: false },
+  { id: 'banner', nome: 'Banner', regen: true },
+  { id: 'cassa', nome: 'Fronte cassa', regen: true },
+  { id: 'alzate', nome: 'Banchi laterali', regen: true },
+  { id: 'nicchie', nome: 'Nicchie', regen: true },
+  { id: 'pareti', nome: 'Pareti stampate', regen: true },
+];
+const WALL_STYLES = ['blocchi', 'fasce', 'sfumatura', 'diagonale', 'chevron', 'tinta'];
+state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 };
+state.locks = { colori: false, logo: false, banner: false, cassa: false, alzate: false, nicchie: false, pareti: false };
+state.history = []; state.seen = new Set();
 
+// palette armonica: se il sito dà pochi colori, li ricavo dal primario
+function hsl2hex(h, s, l) { h = ((h % 360) + 360) % 360; const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return rgbToHex([f(0) * 255, f(8) * 255, f(4) * 255]); }
+function hexToHsl(hex) { let [r, g, b] = hexToRgb(hex).map(v => v / 255); const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn; let h = 0; const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1)); if (d) { h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+function harmony(P) {
+  const [h, s, l] = hexToHsl(P), sat = Math.max(0.35, s);
+  const out = [];
+  if (s < 0.15) out.push('#e8e2d6', '#c9a686', '#d9442b', '#2f4b3a'); // primario neutro (nero, grigio): neutro caldo, cartone, un rosso, un verde
+  else out.push(hsl2hex(h, sat * 0.9, Math.min(0.92, l + 0.35)), hsl2hex(h, sat, Math.max(0.14, l - 0.25)), hsl2hex(h + 180, sat * 0.85, 0.5), hsl2hex(h + 35, sat * 0.8, 0.55), '#efe9df');
+  return out;
+}
+// colori del brand prima di tutto; quelli armonici solo per completare una palette povera
+function colorPool() {
+  const C = state.colors, add = (list, h) => { if (h && list.every(x => dist(hexToRgb(x), hexToRgb(h)) > 45)) list.push(h); };
+  const brand = []; for (const h of [C.primary, C.secondary, C.accent, ...(state.palette || [])]) add(brand, h);
+  const pool = brand.slice(0, 6);
+  if (pool.length < 4) for (const h of harmony(C.primary)) { add(pool, h); if (pool.length >= 4) break; }
+  return pool;
+}
+function pickRoles(seed) {
+  const C = state.colors;
+  if (state.locks.colori || seed === 0) return { P: C.primary, S: C.secondary, A: C.accent };
+  const r = rng(seed * 7 + 3), pool = colorPool();
+  const take = (list) => list[Math.floor(r() * list.length)];
+  const P = r() < 0.5 ? C.primary : take(pool.slice(0, 3)); // il primario del brand resta protagonista
+  const S = take(pool.filter(h => dist(hexToRgb(h), hexToRgb(P)) > 60)) || C.secondary;
+  const A = take(pool.filter(h => dist(hexToRgb(h), hexToRgb(P)) > 60 && dist(hexToRgb(h), hexToRgb(S)) > 60)) || C.accent;
+  return { P, S, A };
+}
+const opt = (list, seed) => list[((seed % list.length) + list.length) % list.length];
+function computeDesign(seeds = state.seeds) {
+  const R = pickRoles(seeds.colori);
+  const colorful = state.logo && logoInfo(state.logo).colorful;
+  const col = (k) => k === 'bianco' ? '#ffffff' : k === 'scuro' ? mix(R.P, '#000000', 0.55) : R[k];
+  const bannerList = colorful ? ['bianco', 'P', 'S', 'scuro', 'A'] : ['P', 'bianco', 'scuro', 'S', 'A'];
+  const cassaList = [['bianco', 'A'], ['P', 'A'], ['bianco', 'P'], ['S', 'P'], ['bianco', null]];
+  const alzStyles = state.hero ? ['foto', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
+  const [cBg, cStripe] = opt(cassaList, seeds.cassa);
+  const r = rng(seeds.pareti * 13 + 1), rolesW = [R.P, R.S, R.A];
+  const wr = seeds.pareti === 0 ? rolesW : [...rolesW].sort(() => r() - 0.5);
+  return {
+    R,
+    banner: col(opt(bannerList, seeds.banner)),
+    cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null },
+    alzate: { style: opt(alzStyles, seeds.alzate), bg: opt([R.S, R.P, R.A], Math.floor(seeds.alzate / alzStyles.length)), piani: opt([R.P, R.S, '#2a2a2a'], Math.floor(seeds.alzate / 2)) },
+    nicchie: opt(['alterne', 'sfumate', 'una', 'duo'], seeds.nicchie),
+    pareti: { style: opt(WALL_STYLES, seeds.pareti), c: wr, band: R.P },
+  };
+}
+// punteggio di una combinazione: leggibilità, varietà, niente superfici che si confondono
+function scoreDesign(D) {
+  let s = 0;
+  const near = (a, b) => dist(hexToRgb(a), hexToRgb(b)) < 40;
+  if (state.walls === 'stampa' && near(D.banner, D.pareti.band)) s -= 3;
+  if (near(D.alzate.piani, D.alzate.bg)) s -= 1.5;
+  if (near(D.cassa.bg, '#c49a68')) s -= 2; // cassa che sparisce nel legno
+  const surf = [D.banner, D.cassa.bg, D.alzate.bg, D.alzate.piani, ...(state.walls === 'stampa' ? D.pareti.c : [])];
+  const dark = surf.filter(h => lum(h) < 0.05).length / surf.length;
+  if (dark > 0.6) s -= 2.5;
+  const uniq = []; for (const h of surf) if (uniq.every(u => !near(u, h))) uniq.push(h);
+  if (uniq.length < 2) s -= 1; else if (uniq.length <= 4) s += 1; else s -= 1;
+  if (state.logo) { const L = logoInfo(state.logo); if (legibility(L, D.banner) >= 0.6) s += 1; } // logo originale leggibile sul banner
+  return s;
+}
+const sig = (seeds) => AREAS.map(a => a.id + seeds[a.id]).join('|');
+function rigeneraTutto() {
+  state.history.push({ ...state.seeds }); state.seen.add(sig(state.seeds));
+  let best = null, bestS = -1e9;
+  for (let i = 0; i < 24; i++) {
+    const s2 = { ...state.seeds };
+    for (const a of AREAS) if (a.regen && !state.locks[a.id]) s2[a.id] = 1 + Math.floor(Math.random() * 997);
+    if (state.seen.has(sig(s2))) continue;
+    const sc = scoreDesign(computeDesign(s2)) + Math.random() * 0.3;
+    if (sc > bestS) { bestS = sc; best = s2; }
+  }
+  if (best) state.seeds = best;
+  applyAll();
+}
+function rigeneraArea(id) {
+  if (id === 'logo') { const n = (state.logoList || []).length; if (n > 1) { state.seeds.logo = (state.seeds.logo + 1) % n; useLogo(state.logoList[state.seeds.logo]); } return; }
+  state.history.push({ ...state.seeds });
+  let best = null, bestS = -1e9; const cur = JSON.stringify(computeDesign()[id === 'colori' ? 'R' : id]);
+  for (let i = 0; i < 12; i++) {
+    const s2 = { ...state.seeds, [id]: 1 + Math.floor(Math.random() * 997) };
+    const D = computeDesign(s2); if (JSON.stringify(D[id === 'colori' ? 'R' : id]) === cur) continue;
+    const sc = scoreDesign(D) + Math.random() * 0.5; if (sc > bestS) { bestS = sc; best = s2; }
+  }
+  if (best) state.seeds = best;
+  applyAll();
+}
+function indietro() { const p = state.history.pop(); if (p) { state.seeds = p; applyAll(); } }
+function resetDesign() { state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 }; state.history = []; state.seen = new Set(); }
+
+// ---------------- leggibilità del logo ----------------
+// campiono i pixel opachi del logo: luminanza e saturazione; versioni monocrome per i fondi difficili
+const _logoCache = new WeakMap();
+function logoInfo(img) {
+  let L = _logoCache.get(img); if (L) return L;
+  const W = img.width || img.naturalWidth, H = img.height || img.naturalHeight, k = 160 / Math.max(W, H);
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height); const d = g.getImageData(0, 0, c.width, c.height).data;
+  const lums = []; let sat = 0;
+  for (let i = 0; i < d.length; i += 8) { if (d[i + 3] < 100) continue; lums.push(lum(rgbToHex([d[i], d[i + 1], d[i + 2]]))); const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); sat += (mx - mn) / 255; }
+  const mono = (hex) => { const o = document.createElement('canvas'); o.width = W; o.height = H; const og = o.getContext('2d'); og.drawImage(img, 0, 0); og.globalCompositeOperation = 'source-in'; og.fillStyle = hex; og.fillRect(0, 0, W, H); return o; };
+  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, white: mono('#ffffff'), black: mono('#161616') };
+  _logoCache.set(img, L); return L;
+}
+function legibility(L, bg) { const b = lum(bg); if (!L.lums.length) return 0; let ok = 0; for (const l of L.lums) if (contrast(l, b) >= 3) ok++; return ok / L.lums.length; }
+// il logo da usare su un certo fondo: originale se si legge, altrimenti bianco o nero
+function logoOn(bg) {
+  if (!state.logo) return null; const L = logoInfo(state.logo);
+  if (legibility(L, bg) >= 0.7) return state.logo;
+  return contrast(lum(bg), 1) >= contrast(lum(bg), lum('#161616')) ? L.white : L.black;
+}
+
+let _raf = 0;
+function applyAll() { if (_raf) return; _raf = requestAnimationFrame(() => { _raf = 0; render(); }); }
+function render() {
+  if (!model) return;
+  const D = computeDesign(); state.design = D; const R = D.R;
   // banner in alto (logo_3)
   {
     const c = panelCanvas('logo_3'), g = c.getContext('2d');
-    const Vb = variant();
-    let bg = state.bannerBg === 'bianco' ? '#ffffff' : (state.bannerBg === 'auto' && (state.variant || 0) % 2 === 1 ? '#ffffff' : Vb.P);
-    if (state.bannerBg === 'auto' && state.logo && contrast(lum(C.primary), logoLum) < 2.2) bg = '#ffffff';
-    g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
-    if (state.logo) drawContain(g, state.logo, c.width * 0.08, c.height * 0.16, c.width * 0.84, c.height * 0.68);
-    else brandWord(g, c.width * 0.08, 0, c.width * 0.84, c.height, readable(bg));
+    g.fillStyle = D.banner; g.fillRect(0, 0, c.width, c.height);
+    const lg = logoOn(D.banner);
+    if (lg) drawContain(g, lg, c.width * 0.08, c.height * 0.16, c.width * 0.84, c.height * 0.68);
+    else brandWord(g, c.width * 0.08, 0, c.width * 0.84, c.height, readable(D.banner));
     setPanel('logo_3', c);
   }
   // fronte cassa (logo_1)
   {
-    const c = panelCanvas('logo_1'), g = c.getContext('2d');
-    const crateBg = state.logo && contrast(1, logoLum) < 2.2 ? C.primary : '#ffffff';
-    g.fillStyle = crateBg; g.fillRect(0, 0, c.width, c.height);
+    const c = panelCanvas('logo_1'), g = c.getContext('2d'), bg = D.cassa.bg;
+    g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
     const tagH = state.tagline ? c.height * 0.16 : 0;
-    if (state.logo) drawContain(g, state.logo, c.width * 0.14, c.height * 0.14, c.width * 0.72, c.height * 0.62 - tagH * 0.3);
-    else brandWord(g, c.width * 0.1, c.height * 0.1, c.width * 0.8, c.height * 0.6, C.primary);
+    const lg = logoOn(bg);
+    if (lg) drawContain(g, lg, c.width * 0.14, c.height * 0.14, c.width * 0.72, c.height * 0.62 - tagH * 0.3);
+    else brandWord(g, c.width * 0.1, c.height * 0.1, c.width * 0.8, c.height * 0.6, readable(bg));
     if (state.tagline) {
-      g.fillStyle = crateBg === '#ffffff' ? C.primary : readable(crateBg); g.textAlign = 'center'; g.textBaseline = 'middle';
+      const ink = bg === '#ffffff' && contrast(lum(R.P), lum(bg)) >= 3 ? R.P : readable(bg);
+      g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
       fitText(g, state.tagline, c.width * 0.84, tagH * 0.75, 600, state.font); g.fillText(state.tagline, c.width / 2, c.height * 0.84);
     }
-    g.fillStyle = variant().A; g.fillRect(0, c.height - c.height * 0.03, c.width, c.height * 0.03);
+    if (D.cassa.stripe) { g.fillStyle = D.cassa.stripe; g.fillRect(0, c.height * 0.965, c.width, c.height * 0.035); }
     setPanel('logo_1', c);
   }
-  // bordo superiore cassa e piani dei banchi: tinta unita
+  // bordo superiore cassa e piani dei banchi
   for (const n of ['logo_2', 'banco_1', 'banco_3']) {
-    const c = panelCanvas(n, 64), g = c.getContext('2d'); g.fillStyle = n === 'logo_2' ? C.accent : C.primary; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
+    const c = panelCanvas(n, 64), g = c.getContext('2d'); g.fillStyle = n === 'logo_2' ? (D.cassa.stripe || R.P) : D.alzate.piani; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
   }
-  // alzate dei banchi laterali (banco_2, banco_4): pannelli piani, qui foto e scritte reggono
-  const Va = variant();
+  // alzate dei banchi laterali: pannelli piani, qui foto e scritte reggono
   for (const n of ['banco_2', 'banco_4']) {
     const c = panelCanvas(n), g = c.getContext('2d'); const W = c.width, H = c.height;
     const msg = (state.tagline || state.brand || '').toUpperCase();
-    const style = Va.alzata, bg = style === 'blocchi' ? Va.P : Va.S;
+    const { style, bg } = D.alzate;
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    if (style === 'testo' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, W, H); }
-    if (style === 'blocchi') { for (let x = 0, i = 0; x < W; x += H * 3, i++) { g.fillStyle = i % 2 ? Va.A : Va.P; g.fillRect(x, 0, H * 3, H); } }
-    const ink = style === 'testo' && state.hero ? '#ffffff' : readable(bg);
-    g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = 'left';
-    if (style === 'logo' && state.logo) {
-      const lum0 = imageLuminance(state.logo); g.globalAlpha = contrast(lum(bg), lum0) < 1.6 ? 0.25 : 1;
-      for (let x = H * 0.4; x < W; x += H * 2.4) drawContain(g, state.logo, x, H * 0.18, H * 1.8, H * 0.64);
-      g.globalAlpha = 1;
+    let ink = readable(bg);
+    if (style === 'foto' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H); ink = '#ffffff'; }
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    if (style === 'blocchi') {
+      const cols = [bg, R.A === bg ? R.P : R.A];
+      for (let x = 0, i = 0; x < W; x += H * 4, i++) { const cc = cols[i % 2]; g.fillStyle = cc; g.fillRect(x, 0, H * 4, H); if (msg) { g.fillStyle = readable(cc); fitText(g, msg, H * 3.6, H * 0.4, 700); g.fillText(msg, x + H * 0.25, H / 2); } }
+    } else if (style === 'logo' && state.logo) {
+      const lg = logoOn(bg); for (let x = H * 0.4; x < W; x += H * 2.4) drawContain(g, lg, x, H * 0.18, H * 1.8, H * 0.64);
     } else if (msg) {
       fitText(g, msg, W * 0.55, H * 0.42, 700);
       const step = g.measureText(msg).width + H * 1.6; let x = H * 0.5, i = 0;
+      const lg = style === 'foto' ? (state.logo ? logoInfo(state.logo).white : null) : logoOn(bg);
       while (x < W) {
-        if (state.logo && i % 2 === 1 && style !== 'blocchi') { drawContain(g, state.logo, x, H * 0.2, H * 1.2, H * 0.6); x += H * 1.6; }
-        else { g.fillStyle = style === 'blocchi' ? readable(i % 2 ? Va.A : Va.P) : ink; g.fillText(msg, x, H / 2); x += step; }
+        if (lg && i % 2 === 1) { drawContain(g, lg, x, H * 0.2, H * 1.2, H * 0.6); x += H * 1.6; }
+        else { g.fillStyle = ink; g.fillText(msg, x, H / 2); x += step; }
         i++;
       }
     }
     setPanel(n, c);
   }
-  const Vn = variant();
-  const pal = Vn.nicchie === 'una' ? [Vn.A] : Vn.nicchie === 'sfumate' ? [Vn.P, mix(Vn.P, Vn.S, 0.5), Vn.S] : [Vn.P, Vn.A, Vn.S];
-  for (let i = 1; i <= 9; i++) {
-    const n = 'nicchia_' + i; const c = panelCanvas(n, 64), g = c.getContext('2d');
-    g.fillStyle = pal[(i - 1) % pal.length]; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
-  }
+  // nicchie
+  const pal = D.nicchie === 'una' ? [R.A] : D.nicchie === 'sfumate' ? [R.P, mix(R.P, R.S, 0.5), R.S] : D.nicchie === 'duo' ? [R.P, R.S] : [R.P, R.A, R.S];
+  for (let i = 1; i <= 9; i++) { const n = 'nicchia_' + i; const c = panelCanvas(n, 64), g = c.getContext('2d'); g.fillStyle = pal[(i - 1) % pal.length]; g.fillRect(0, 0, c.width, c.height); setPanel(n, c); }
   // pareti: cartone bianco, tinta o stampa premium
   if (M.pareti.map) { M.pareti.map.dispose(); M.pareti.map = null; }
-  if (state.walls === 'stampa') { M.pareti.map = wallTexture(); M.pareti.color.set('#ffffff'); M.bordo.color.set(mix(C.primary, '#ffffff', 0.1)); }
-  else { M.pareti.color.set(state.walls === 'tinta' ? mix(C.neutral, '#ffffff', 0.25) : '#ecebe6'); M.bordo.color.set(M.pareti.color); }
+  if (state.walls === 'stampa') { M.pareti.map = wallTexture(); M.pareti.color.set('#ffffff'); M.bordo.color.set(mix(D.pareti.band, '#ffffff', 0.1)); }
+  else { M.pareti.color.set(state.walls === 'tinta' ? mix(R.P, '#ffffff', 0.85) : '#ecebe6'); M.bordo.color.set(M.pareti.color); }
   M.pareti.needsUpdate = true;
-  // cassa
-  if (M.cassa.map) M.cassa.map.dispose();
-  M.cassa.map = woodTexture(state.crate === 'tinta' ? C.secondary : null); M.cassa.needsUpdate = true;
-  // prodotti
-  M.prodotti.color.set(C.accent);
+  // cassa in legno (in cache) e prodotti
+  M.cassa.map = woodTexture(state.crate === 'tinta' ? R.S : null); M.cassa.needsUpdate = true;
+  M.prodotti.color.set(R.A);
   model.getObjectByName('prodotti') && (model.getObjectByName('prodotti').visible = state.products);
   syncUI();
 }
@@ -498,7 +614,7 @@ function decidePalette(logoCols, cssCols, tc) {
 async function analyzeSite() {
   let url = $('#url').value.trim(); if (!url) { setStatus('Scrivi l\'indirizzo del sito.'); return; }
   if (!WORKER) { setStatus('Servizio di lettura dei siti non configurato.'); return; }
-  busy(true); state.variant = 0; setStatus('Leggo il sito…'); $('#go').disabled = true;
+  busy(true); resetDesign(); state.locks.colori = false; state.locks.logo = false; setStatus('Leggo il sito…'); $('#go').disabled = true;
   try {
     const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`, { cache: 'no-cache' });
     const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
@@ -522,6 +638,7 @@ async function analyzeSite() {
     const pts = (x) => x.c.score + (x.q.ar > 1.6 ? 10 : 0) + (x.c.kind === 'icona' ? -40 : 0) - (imageLuminance(x.c.img) > 0.8 ? 25 : 0);
     const ranked = logoC.map(c => ({ c, q: logoQuality(c.img) })).filter(x => x.q.ok && !x.q.photo).sort((a, b) => pts(b) - pts(a));
     const best = ranked[0] ? ranked[0].c : null;
+    state.logoList = ranked.map(x => x.c); state.seeds.logo = 0;
     state.logo = best ? knockoutWhite(best.img) : null; state.logoFrom = best;
     const photos = state.candidates.filter(c => c.src === 'sito' && c.kind === 'immagine' && (c.img.width || c.img.naturalWidth) >= 400)
       .sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height));
@@ -601,14 +718,70 @@ Rispondi SOLO con JSON: {"brand":string|null,"tagline":string|null (max 6 parole
   }
 }
 
+function useLogo(cd) {
+  if (!cd) return; state.logo = knockoutWhite(cd.img); state.logoFrom = cd;
+  const i = (state.logoList || []).indexOf(cd); if (i >= 0) state.seeds.logo = i;
+  const lc = extractPalette([state.logo]); if (lc.length) state.palette = [...new Set([...lc, ...(state.palette || [])])].slice(0, 10);
+  applyAll();
+}
 // ---------------- UI ----------------
 function setStatus(t) { $('#status').textContent = t; }
+// quale colore va su quale parte, per area
+function areaSwatches(id, D) {
+  const R = D.R;
+  if (id === 'colori') return [R.P, R.S, R.A];
+  if (id === 'banner') return [D.banner];
+  if (id === 'cassa') return [D.cassa.bg, D.cassa.stripe].filter(Boolean);
+  if (id === 'alzate') return [D.alzate.bg, D.alzate.piani];
+  if (id === 'nicchie') return D.nicchie === 'una' ? [R.A] : D.nicchie === 'duo' ? [R.P, R.S] : [R.P, R.A, R.S];
+  if (id === 'pareti') return state.walls === 'stampa' ? D.pareti.c : [];
+  return [];
+}
+const AREA_NOTE = { colori: 'primario · secondario · accento', logo: '', banner: '', cassa: '', alzate: 'alzata · piano', nicchie: '', pareti: '' };
+function renderAreas() {
+  const box = $('#areas'); if (!box || !state.design) return; box.innerHTML = '';
+  for (const a of AREAS) {
+    const row = document.createElement('div'); row.className = 'area' + (state.focus === a.id ? ' focus' : ''); row.dataset.area = a.id;
+    const name = document.createElement('span'); name.className = 'aname'; name.textContent = a.nome;
+    const sw = document.createElement('span'); sw.className = 'sw';
+    if (a.id === 'logo') { if (state.logo) { const c = document.createElement('canvas'); c.width = 60; c.height = 20; drawContain(c.getContext('2d'), state.logo, 0, 0, 60, 20); sw.append(c); } else sw.textContent = '—'; }
+    else if (a.id === 'pareti' && state.walls !== 'stampa') { sw.textContent = 'attiva “Stampate ★”'; sw.className = 'sw off'; }
+    else for (const h of areaSwatches(a.id, state.design)) { const i = document.createElement('i'); i.style.background = h; i.title = h; sw.append(i); }
+    const rg = document.createElement('button'); rg.className = 'ic'; rg.textContent = '↻'; rg.title = a.id === 'logo' ? 'Prova il logo successivo' : 'Rigenera solo questa parte';
+    rg.disabled = state.locks[a.id] || (a.id === 'logo' && (state.logoList || []).length < 2) || (a.id === 'pareti' && state.walls !== 'stampa');
+    rg.onclick = () => rigeneraArea(a.id);
+    const lk = document.createElement('button'); lk.className = 'ic' + (state.locks[a.id] ? ' on' : ''); lk.textContent = state.locks[a.id] ? '🔒' : '🔓'; lk.title = state.locks[a.id] ? 'Bloccata: Rigenera non la cambia' : 'Blocca questa parte';
+    lk.onclick = () => { state.locks[a.id] = !state.locks[a.id]; renderAreas(); };
+    row.append(name, sw, rg, lk); box.append(row);
+  }
+}
+// clic sul modello: quale area è
+const MESH_AREA = (n) => n.startsWith('logo_3') ? 'banner' : n.startsWith('logo_') ? 'cassa' : n.startsWith('banco_') ? 'alzate' : n.startsWith('nicchia_') ? 'nicchie' : n.startsWith('pareti') ? 'pareti' : n === 'cassa' || n === 'ruote' ? 'cassa' : null;
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let downAt = null;
+canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5 || !model) return;
+  const r = canvas.getBoundingClientRect(); ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ptr, camera); const hit = ray.intersectObject(model, true).find(h => h.object.visible && MESH_AREA(h.object.name));
+  const pop = $('#pop');
+  if (!hit) { pop.hidden = true; state.focus = null; renderAreas(); return; }
+  const id = MESH_AREA(hit.object.name); state.focus = id; renderAreas();
+  const a = AREAS.find(x => x.id === id);
+  pop.innerHTML = ''; const t = document.createElement('b'); t.textContent = a.nome;
+  const rg = document.createElement('button'); rg.textContent = '↻ Rigenera'; rg.disabled = state.locks[id] || (id === 'pareti' && state.walls !== 'stampa'); rg.onclick = () => { rigeneraArea(id); };
+  const lk = document.createElement('button'); lk.textContent = state.locks[id] ? '🔒 Sblocca' : '🔓 Blocca'; lk.onclick = () => { state.locks[id] = !state.locks[id]; pop.hidden = true; renderAreas(); };
+  pop.append(t, rg, lk);
+  if (id === 'pareti' && state.walls !== 'stampa') { const p = document.createElement('small'); p.textContent = 'Attiva “Stampate ★” per personalizzarle'; pop.append(p); }
+  const mr = canvas.parentElement.getBoundingClientRect();
+  pop.style.left = Math.min(mr.width - 230, e.clientX - mr.left + 10) + 'px'; pop.style.top = Math.max(10, e.clientY - mr.top - 20) + 'px'; pop.hidden = false;
+});
 function syncUI() {
   for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).value = state.colors[k];
   $('#brand').value = state.brand; $('#tagline').value = state.tagline;
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
   $('#products').checked = state.products;
-  $('#vn').textContent = (state.variant || 0) === 0 ? 'Proposta' : 'Variante ' + (state.variant + 1); $('#prev').disabled = !(state.variant > 0);
+  const nv = state.history.length; $('#vn').textContent = nv === 0 ? 'Proposta' : 'Variante ' + (nv + 1); $('#prev').disabled = nv === 0;
+  renderAreas();
   // logo preview
   const lp = $('#logo-prev'); lp.innerHTML = '';
   if (state.logo) { const c = document.createElement('canvas'); c.width = 240; c.height = 90; drawContain(c.getContext('2d'), state.logo, 0, 0, 240, 90); lp.append(c); } else lp.textContent = 'Nessun logo';
@@ -616,7 +789,7 @@ function syncUI() {
   const pc = $('#pal'); pc.innerHTML = '';
   for (const h of state.palette || []) {
     const b = document.createElement('button'); b.className = 'chip'; b.style.background = h; b.title = h + ' → clic: primario · Maiusc+clic: accento · Alt+clic: secondario';
-    b.onclick = (e) => { const k = e.shiftKey ? 'accent' : e.altKey ? 'secondary' : 'primary'; state.colors[k] = h; applyAll(); };
+    b.onclick = (e) => { const k = e.shiftKey ? 'accent' : e.altKey ? 'secondary' : 'primary'; state.colors[k] = h; state.locks.colori = true; state.seeds.colori = 0; applyAll(); };
     pc.append(b);
   }
   // candidates
@@ -625,7 +798,7 @@ function syncUI() {
     const d = document.createElement('div'); d.className = 'cand';
     const c = document.createElement('canvas'); c.width = 96; c.height = 72; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 96, 72); drawContain(g, cd.img, 4, 4, 88, 64);
     const a = document.createElement('button'); a.textContent = state.logoFrom === cd ? '✓ Logo' : 'Logo'; a.className = state.logoFrom === cd ? 'sel' : '';
-    a.onclick = () => { state.logo = knockoutWhite(cd.img); state.logoFrom = cd; const lc = extractPalette([state.logo]); if (lc.length) state.palette = [...new Set([...lc, ...(state.palette || [])])].slice(0, 10); applyAll(); };
+    a.onclick = () => { if (!(state.logoList || []).includes(cd)) (state.logoList = state.logoList || []).push(cd); useLogo(cd); state.locks.logo = true; };
     const b = document.createElement('button'); b.textContent = state.heroFrom === cd ? '✓ Foto' : 'Foto'; b.className = state.heroFrom === cd ? 'sel' : '';
     b.onclick = () => { state.hero = cd.img; state.heroFrom = cd; applyAll(); };
     d.classList.toggle('in-use', state.logoFrom === cd || state.heroFrom === cd);
@@ -647,7 +820,7 @@ async function handleFiles(files) {
   if (!files.length) return;
   setStatus('Leggo il press kit…');
   for (const f of files) { try { await ingestFile(f); } catch (err) { console.error(err); setStatus('Non riesco a leggere ' + f.name); } }
-  autoPick();
+  autoPick(); state.logoList = state.candidates.filter(c => c.kind === 'logo' || c.kind === 'immagine'); resetDesign();
   if (!state.brand) { const guess = files[0].name.replace(/\.(zip|pdf|png|jpe?g|svg|webp)$/i, '').replace(/[-_]+/g, ' ').replace(/press ?kit|brand ?book|logo/ig, '').trim(); if (guess) state.brand = guess.replace(/\b\w/g, m => m.toUpperCase()); }
   applyAll();
   setStatus(`${state.candidates.length} immagini trovate. Controlla logo e colori${sample ? ', oppure chiedi una proposta a Claude' : ''}.`);
@@ -658,16 +831,17 @@ $('#url').addEventListener('change', () => {
 });
 $('#ai').addEventListener('click', aiDirect);
 $('#go').addEventListener('click', analyzeSite);
-$('#regen').addEventListener('click', () => { state.variant = (state.variant || 0) + 1; applyAll(); });
-$('#prev').addEventListener('click', () => { state.variant = Math.max(0, (state.variant || 0) - 1); applyAll(); });
+$('#regen').addEventListener('click', rigeneraTutto);
+$('#prev').addEventListener('click', indietro);
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyzeSite(); });
-for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => { state.colors[k] = e.target.value; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85); applyAll(); });
+for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => { state.colors[k] = e.target.value; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85); state.locks.colori = true; state.seeds.colori = 0; applyAll(); });
 $('#brand').addEventListener('input', (e) => { state.brand = e.target.value; applyAll(); });
 $('#tagline').addEventListener('input', (e) => { state.tagline = e.target.value; applyAll(); });
 document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { state[b.dataset.opt] = b.dataset.val; applyAll(); }));
 $('#products').addEventListener('change', (e) => { state.products = e.target.checked; applyAll(); });
 $('#reset').addEventListener('click', () => {
-  Object.assign(state, { variant: 0, font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
+  resetDesign(); state.locks = Object.fromEntries(Object.keys(state.locks).map(k => [k, false])); state.logoList = [];
+  Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
   state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
 });
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
@@ -676,11 +850,13 @@ document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click'
 }));
 // screenshot
 let downloads = null;
-(async () => { try { downloads = await window.claude?.use?.('downloads'); } catch { } $('#shot').hidden = !downloads; })();
+(async () => { try { downloads = await window.claude?.use?.('downloads'); } catch { } $('#shot').hidden = false; })();
 $('#shot').addEventListener('click', async () => {
   renderer.render(scene, camera);
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-  try { await downloads.save({ filename: `stand-${(state.brand || 'brand').toLowerCase().replace(/\W+/g, '-')}.png`, data: blob }); } catch (e) { setStatus('Salvataggio annullato.'); }
+  const filename = `stand-${(state.brand || 'brand').toLowerCase().replace(/\W+/g, '-')}.png`;
+  if (downloads) { try { await downloads.save({ filename, data: blob }); } catch (e) { setStatus('Salvataggio annullato.'); } return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click(); a.remove();
 });
 
 function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
