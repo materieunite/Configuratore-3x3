@@ -22,7 +22,7 @@ export default {
     try {
       if (u.pathname === '/brand') {
         const target = safeUrl(u.searchParams.get('url'), env);
-        const cache = caches.default, key = new Request(`https://cache.local/brand?u=${encodeURIComponent(target.href)}`);
+        const cache = caches.default, key = new Request(`https://cache.local/brand?v=${VERSION}&u=${encodeURIComponent(target.href)}`);
         let hit = await cache.match(key);
         if (hit) { const h = new Headers(hit.headers); for (const [k, v] of Object.entries(cors)) h.set(k, v); return new Response(hit.body, { headers: h }); }
         const data = await brand(target, env);
