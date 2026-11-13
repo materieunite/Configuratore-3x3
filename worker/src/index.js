@@ -32,7 +32,7 @@ export default {
         const target = safeUrl(u.searchParams.get('u'), env);
         const r = await get(target, 'image/avif,image/webp,image/svg+xml,image/*;q=0.8');
         const type = (r.headers.get('content-type') || '').split(';')[0];
-        if (!r.ok || !/^image\//.test(type)) return json({ error: 'non è un\'immagine' }, 415, cors);
+        if (!r.ok || !/^image\//.test(type)) return json({ error: "non è un'immagine" }, 415, cors);
         const buf = await readLimited(r, MAX_IMG);
         return new Response(buf, { headers: { ...cors, 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' } });
       }
@@ -45,7 +45,7 @@ export default {
 
 // ---------------- sicurezza ----------------
 function safeUrl(raw, env) {
-  if (!raw) throw err('manca l\'indirizzo', 400);
+  if (!raw) throw err("manca l'indirizzo", 400);
   if (!/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
   let t; try { t = new URL(raw); } catch { throw err('indirizzo non valido', 400); }
   if (!/^https?:$/.test(t.protocol)) throw err('solo http/https', 400);
