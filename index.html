@@ -63,6 +63,14 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
 .area .ic{border:1px solid var(--line);background:#fff;border-radius:6px;height:26px;cursor:pointer;font-size:13px;padding:0}.area .ic:disabled{opacity:.3;cursor:default}.area .ic.on{background:#f1efe9;border-color:var(--ink)}
 #pop{position:absolute;z-index:5;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:170px;box-shadow:0 6px 24px rgba(0,0,0,.12);font-size:13px}
 #pop button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 8px;text-align:left;font:500 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer}#pop button:disabled{opacity:.35}#pop small{color:var(--mute);font-size:11px}
+aside{position:relative}
+.role{display:flex;align-items:center;gap:6px;width:100%;height:36px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff;cursor:pointer;font:400 10.5px "IBM Plex Mono",ui-monospace,monospace;color:var(--mute)}
+.role i{width:26px;height:26px;border-radius:5px;border:1px solid rgba(0,0,0,.12);flex:none}
+#rolepop{position:absolute;z-index:6;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);width:250px}
+.rp-t{font:500 10px "IBM Plex Mono",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:2px 0 6px}
+.rp-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.rp-add{width:100%;border:1px dashed #c9c4b9;background:#fff;border-radius:7px;padding:7px;font:500 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer}
+#custom-color{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;left:0;top:0}
 </style>
 <script>window.PANELS={"logo_1": {"w": 0.725, "h": 0.676}, "logo_2": {"w": 0.725, "h": 0.137}, "logo_3": {"w": 1.585, "h": 0.409}, "banco_1": {"w": 0.299, "h": 2.493}, "banco_2": {"w": 2.433, "h": 0.244}, "banco_3": {"w": 0.299, "h": 2.493}, "banco_4": {"w": 2.433, "h": 0.244}, "nicchia_1": {"w": 0.239, "h": 0.286}, "nicchia_2": {"w": 0.239, "h": 0.286}, "nicchia_3": {"w": 0.239, "h": 0.286}, "nicchia_4": {"w": 0.239, "h": 0.286}, "nicchia_5": {"w": 0.239, "h": 0.286}, "nicchia_6": {"w": 0.239, "h": 0.286}, "nicchia_7": {"w": 0.239, "h": 0.286}, "nicchia_8": {"w": 0.239, "h": 0.286}, "nicchia_9": {"w": 0.239, "h": 0.286}};</script>
 </head>
@@ -98,11 +106,13 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
   </div>
   <div class="lab"><span>Colori</span></div>
   <div class="cols">
-    <label class="col">Primario<input type="color" id="c-primary"></label>
-    <label class="col">Secondario<input type="color" id="c-secondary"></label>
-    <label class="col">Accento<input type="color" id="c-accent"></label>
+    <div class="col">Primario<button class="role" data-role="primary"><i></i><span></span></button></div>
+    <div class="col">Secondario<button class="role" data-role="secondary"><i></i><span></span></button></div>
+    <div class="col">Accento<button class="role" data-role="accent"><i></i><span></span></button></div>
   </div>
   <div id="pal"></div>
+  <div id="rolepop" hidden></div>
+  <input type="color" id="custom-color" tabindex="-1" aria-hidden="true">
 
   <div class="lab"><span>3 · Allestimento</span></div>
     <div class="opt"><span>Pareti</span><div class="seg"><button data-opt="walls" data-val="bianco">Cartone bianco</button><button data-opt="walls" data-val="tinta">Tinta</button><button data-opt="walls" data-val="stampa">Stampate ★</button></div></div>

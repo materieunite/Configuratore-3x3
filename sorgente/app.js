@@ -162,11 +162,14 @@ function wallArt(kind) {
   const cols = kind === 'fondo' ? [p0, p1, p2] : kind === 'sinistra' ? [p1, p2, p0] : [p1, p0, p2];
   const [a, b, d] = cols;
   if (style === 'tinta') { g.fillStyle = kind === 'fondo' ? a : b; g.fillRect(0, 0, W, H); }
-  else if (style === 'blocchi') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.fillRect(0, H * 0.58, W, H * 0.42); g.fillStyle = d; g.fillRect(0, H * 0.55, W, H * 0.03); }
-  else if (style === 'fasce') { const n = 5; for (let i = 0; i < n; i++) { g.fillStyle = [a, b, a, d, b][i]; g.fillRect(0, (H / n) * i, W, H / n + 1); } }
-  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(0.55, mix(a, b, 0.5)); gr.addColorStop(1, b); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-  else if (style === 'diagonale') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill(); g.strokeStyle = d; g.lineWidth = 36; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.stroke(); }
-  else if (style === 'chevron') { g.fillStyle = a; g.fillRect(0, 0, W, H); const step = 220; for (let y = H * 0.25, i = 0; y < H + step; y += step, i++) { g.strokeStyle = i % 2 ? d : b; g.lineWidth = 70; g.beginPath(); for (let x = -step, k = 0; x <= W + step; x += step / 2, k++) g.lineTo(x, y + (k % 2 ? -60 : 60)); g.stroke(); } }
+  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(1, b); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+  else if (style === 'sfumatura3') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(0.55, b); gr.addColorStop(1, d); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+  else if (style === 'orizzontale') { // sfumatura da un lato all'altro: le pareti laterali continuano quella di fondo
+    const gr = g.createLinearGradient(0, 0, W, 0); const [x0, x1] = kind === 'sinistra' ? [b, a] : kind === 'destra' ? [a, b] : [b, a];
+    gr.addColorStop(0, x0); gr.addColorStop(1, kind === 'fondo' ? b : x1); if (kind === 'fondo') { gr.addColorStop(0.5, a); } g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+  else if (style === 'rigato') { g.fillStyle = a; g.fillRect(0, 0, W, H); const step = H / 16; g.fillStyle = b; for (let y = H * 0.18; y < H; y += step * 2) g.fillRect(0, y, W, step * 0.55); }
+  else if (style === 'zoccolo') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.fillRect(0, H * 0.7, W, H * 0.3); g.fillStyle = d; g.fillRect(0, H * 0.68, W, H * 0.025); }
+  else if (style === 'fasce') { const cs = [a, b, d]; for (let i = 0; i < 3; i++) { g.fillStyle = cs[i]; g.fillRect(0, (H / 3) * i, W, H / 3 + 1); } }
   // fascia in alto nel colore principale: incornicia il banner
   if (kind === 'fondo') { g.fillStyle = D.pareti.band; g.fillRect(0, 0, W, H * 0.14); }
   return c;
@@ -226,7 +229,8 @@ const AREAS = [
   { id: 'nicchie', nome: 'Nicchie', regen: true },
   { id: 'pareti', nome: 'Pareti stampate', regen: true },
 ];
-const WALL_STYLES = ['blocchi', 'fasce', 'sfumatura', 'diagonale', 'chevron', 'tinta'];
+// motivi pensati per i pannelli a zig-zag: campiture orizzontali, sfumature verticali, niente diagonali
+const WALL_STYLES = ['sfumatura', 'rigato', 'zoccolo', 'sfumatura3', 'fasce', 'orizzontale', 'tinta'];
 state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 };
 state.locks = { colori: false, logo: false, banner: false, cassa: false, alzate: false, nicchie: false, pareti: false };
 state.history = []; state.seen = new Set();
@@ -335,7 +339,11 @@ function logoInfo(img) {
   for (let i = 0; i < d.length; i += 8) { if (d[i + 3] < 100) continue; lums.push(lum(rgbToHex([d[i], d[i + 1], d[i + 2]]))); const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); sat += (mx - mn) / 255; }
   const mono = (hex) => { const o = document.createElement('canvas'); o.width = W; o.height = H; const og = o.getContext('2d'); og.drawImage(img, 0, 0); og.globalCompositeOperation = 'source-in'; og.fillStyle = hex; og.fillRect(0, 0, W, H); return o; };
   const dk = lums.filter(l => l < 0.12).length / Math.max(1, lums.length), lt = lums.filter(l => l > 0.5).length / Math.max(1, lums.length);
-  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, twoTone: dk > 0.12 && lt > 0.12, ar: W / H, white: mono('#ffffff'), black: mono('#161616') };
+  // quanto del logo è di un solo colore: se quasi tutto, si può ricolorare; altrimenti va su placca
+  const bins = new Map(); let nOp = 0;
+  for (let i = 0; i < d.length; i += 8) { if (d[i + 3] < 100) continue; nOp++; const k2 = (d[i] >> 5) << 6 | (d[i + 1] >> 5) << 3 | (d[i + 2] >> 5); bins.set(k2, (bins.get(k2) || 0) + 1); }
+  const top = Math.max(0, ...bins.values()) / Math.max(1, nOp);
+  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, twoTone: dk > 0.12 && lt > 0.12, monoOk: top >= 0.8, ar: W / H, white: mono('#ffffff'), black: mono('#161616') };
   _logoCache.set(img, L); return L;
 }
 function legibility(L, bg) { const b = lum(bg); if (!L.lums.length) return 0; let ok = 0; for (const l of L.lums) if (contrast(l, b) >= 3) ok++; return ok / L.lums.length; }
@@ -345,8 +353,9 @@ function drawLogo(g, bg, x, y, w, h, onPhoto = false) {
   if (!state.logo) return false;
   const L = logoInfo(state.logo);
   if (!onPhoto && legibility(L, bg) >= 0.7) { drawContain(g, state.logo, x, y, w, h); return true; }
-  if (!L.twoTone) { const m = onPhoto || contrast(lum(bg), 1) >= contrast(lum(bg), lum('#161616')) ? L.white : L.black; drawContain(g, m, x, y, w, h); return true; }
-  const plate = legibility(L, '#ffffff') >= legibility(L, '#161616') ? '#ffffff' : '#161616';
+  if (L.monoOk && !L.twoTone) { const m = onPhoto || contrast(lum(bg), 1) >= contrast(lum(bg), lum('#161616')) ? L.white : L.black; drawContain(g, m, x, y, w, h); return true; }
+  // placca chiara o scura, quella su cui il logo originale si legge meglio e che si stacca dal fondo
+  const plate = legibility(L, '#ffffff') + (contrast(lum(bg), 1) > 1.4 ? 0.15 : 0) >= legibility(L, '#161616') ? '#ffffff' : '#161616';
   const iw = state.logo.width || state.logo.naturalWidth, ih = state.logo.height || state.logo.naturalHeight;
   const k = Math.min(w / iw, h / ih) * 0.82, dw = iw * k, dh = ih * k, cx = x + w / 2, cy = y + h / 2, pad = Math.min(dw, dh) * 0.14;
   g.fillStyle = plate; g.beginPath();
@@ -805,7 +814,7 @@ canvas.addEventListener('pointerup', (e) => {
 });
 function syncUI() {
   const RU = state.design ? state.design.R : { P: state.colors.primary, S: state.colors.secondary, A: state.colors.accent };
-  $('#c-primary').value = RU.P; $('#c-secondary').value = RU.S; $('#c-accent').value = RU.A;
+  for (const [k, h] of [['primary', RU.P], ['secondary', RU.S], ['accent', RU.A]]) { const b = document.querySelector(`.role[data-role=${k}]`); if (b) { b.querySelector('i').style.background = h; b.querySelector('span').textContent = h; } }
   $('#brand').value = state.brand; $('#tagline').value = state.tagline;
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
   $('#products').checked = state.products;
@@ -816,7 +825,7 @@ function syncUI() {
   if (state.logo) { const c = document.createElement('canvas'); c.width = 240; c.height = 90; drawContain(c.getContext('2d'), state.logo, 0, 0, 240, 90); lp.append(c); } else lp.textContent = 'Nessun logo';
   // palette chips
   const pc = $('#pal'); pc.innerHTML = '';
-  for (const h of state.palette || []) {
+  for (const h of []) {
     const b = document.createElement('button'); b.className = 'chip'; b.style.background = h; b.title = h + ' → clic: primario · Maiusc+clic: accento · Alt+clic: secondario';
     b.onclick = (e) => setRole(e.shiftKey ? 'accent' : e.altKey ? 'secondary' : 'primary', h);
     pc.append(b);
@@ -870,7 +879,25 @@ function setRole(k, hex) {
   state.colors[k] = hex; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85);
   state.locks.colori = true; state.seeds.colori = 0; applyAll();
 }
-for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => setRole(k, e.target.value));
+// scelta del colore di un ruolo: palette del sito, colori suggeriti, + per uno nuovo
+let roleOpen = null;
+function openRole(btn) {
+  const k = btn.dataset.role, pop = $('#rolepop'); roleOpen = k; pop.innerHTML = '';
+  const sec = (title, list) => { if (!list.length) return; const h = document.createElement('div'); h.className = 'rp-t'; h.textContent = title; pop.append(h); const row = document.createElement('div'); row.className = 'rp-row';
+    for (const hex of list) { const b = document.createElement('button'); b.className = 'chip'; b.style.background = hex; b.title = hex; b.onclick = () => { setRole(k, hex); pop.hidden = true; }; row.append(b); } pop.append(row); };
+  const site = [...new Set(state.palette || [])];
+  sec('Colori del sito', site);
+  sec('Suggeriti', harmony(state.colors.primary).filter(h => site.every(x => dist(hexToRgb(x), hexToRgb(h)) > 30)));
+  const add = document.createElement('button'); add.className = 'rp-add'; add.textContent = '+ Nuovo colore';
+  add.onclick = () => { const i = $('#custom-color'); i.value = btn.querySelector('span').textContent || '#000000'; i.click(); };
+  pop.append(add);
+  const r = btn.getBoundingClientRect(), a = $('aside').getBoundingClientRect();
+  pop.style.left = (r.left - a.left) + 'px'; pop.style.top = (r.bottom - a.top + $('aside').scrollTop + 6) + 'px'; pop.hidden = false;
+}
+document.querySelectorAll('.role').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); const p = $('#rolepop'); if (!p.hidden && roleOpen === b.dataset.role) { p.hidden = true; return; } openRole(b); }));
+$('#custom-color').addEventListener('input', (e) => { if (!roleOpen) return; const h = e.target.value; state.palette = [...new Set([...(state.palette || []), h])]; setRole(roleOpen, h); });
+$('#custom-color').addEventListener('change', () => { $('#rolepop').hidden = true; });
+document.addEventListener('click', (e) => { const p = $('#rolepop'); if (!p.hidden && !p.contains(e.target)) p.hidden = true; });
 $('#brand').addEventListener('input', (e) => { state.brand = e.target.value; applyAll(); });
 $('#tagline').addEventListener('input', (e) => { state.tagline = e.target.value; applyAll(); });
 document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { state[b.dataset.opt] = b.dataset.val; applyAll(); }));
