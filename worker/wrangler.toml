@@ -1,6 +1,8 @@
 name = "configuratore-stand"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
+workers_dev = true
 
+# Pagine autorizzate a usare il Worker (separate da virgola)
 [vars]
-ALLOWED_ORIGINS = "https://materieunite.github.io"
+ALLOWED_ORIGINS = "https://configuratore-3x3.pages.dev,https://materieunite.github.io"
