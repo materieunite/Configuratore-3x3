@@ -130,6 +130,22 @@ new GLTFLoader().load('./stand.glb', (gltf) => {
   applyAll();
 }, undefined, (e) => { $('#loading').textContent = 'Errore nel caricamento del modello'; console.error(e); });
 
+// ---------------- varianti (tasto Rigenera) ----------------
+// variante 0 = proposta di partenza; ogni Rigenera cambia ruoli dei colori e disegni.
+function rng(seed) { let a = (seed * 2654435761) >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const WALL_STYLES = ['blocchi', 'fasce', 'sfumatura', 'diagonale', 'chevron', 'tinta'];
+function variant() {
+  const v = state.variant || 0, r = rng(v + 1);
+  const base = [state.colors.primary, state.colors.secondary, state.colors.accent];
+  const extra = (state.palette || []).filter(h => base.every(b => dist(hexToRgb(b), hexToRgb(h)) > 50));
+  if (v === 0) return { P: base[0], S: base[1], A: base[2], wall: 'blocchi', alzata: 'testo', nicchie: 'alterne' };
+  const pool = [...base, ...extra.slice(0, 2)];
+  const pick = () => pool.splice(Math.floor(r() * pool.length), 1)[0];
+  const P = v % 3 === 0 ? base[0] : pick(); const rest = pool.filter(h => h !== P);
+  const S = rest[Math.floor(r() * rest.length)] || base[1]; const A = rest.filter(h => h !== S)[Math.floor(r() * Math.max(1, rest.length - 1))] || base[2];
+  return { P, S, A, wall: WALL_STYLES[v % WALL_STYLES.length], alzata: ['testo', 'logo', 'blocchi'][Math.floor(r() * 3)], nicchie: ['alterne', 'sfumate', 'una'][Math.floor(r() * 3)] };
+}
+
 // ---------------- pareti stampate (premium) ----------------
 // UV proiettate: parete di fondo vista da davanti, pareti laterali viste da fuori.
 // Atlante: [0,0.5) fondo · [0.5,0.75) sinistra · [0.75,1] destra; v = quota.
@@ -149,31 +165,20 @@ function projectWallUV(mesh) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 function wallArt(kind) {
-  // disegno in proporzioni reali (3,04 x 2,56 m), poi stirato nell'atlante
+  // disegno in proporzioni reali (3,04 x 2,56 m), poi stirato nell'atlante.
+  // Solo campiture di colore: sui pannelli a zig-zag foto, loghi e scritte si deformano.
   const c = document.createElement('canvas'); c.width = 1520; c.height = 1280; const g = c.getContext('2d');
-  const C = state.colors, W = c.width, H = c.height;
-  if (kind === 'fondo') {
-    if (state.hero) { drawCover(g, state.hero, W, H); const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(0,0,0,0.05)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-    else {
-      g.fillStyle = C.primary; g.fillRect(0, 0, W, H);
-      g.save(); g.translate(W / 2, H / 2); g.rotate(-0.35);
-      for (let i = -6; i < 7; i++) { g.fillStyle = i % 3 === 0 ? C.accent : i % 3 === 1 ? C.secondary : C.primary; g.globalAlpha = 0.85; g.fillRect(i * 230 - 60, -H, 120, H * 2); }
-      g.restore(); g.globalAlpha = 1;
-    }
-    // fascia in alto che incornicia il banner
-    g.fillStyle = C.primary; g.fillRect(0, 0, W, H * 0.14);
-    if (state.tagline) { g.fillStyle = state.hero ? '#ffffff' : readable(C.primary); g.textAlign = 'center'; g.textBaseline = 'middle'; fitText(g, state.tagline.toUpperCase(), W * 0.8, H * 0.07, 700); g.fillText(state.tagline.toUpperCase(), W / 2, H * 0.93); }
-  } else {
-    const bg = kind === 'sinistra' ? C.secondary : C.primary; g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    if (state.hero && kind === 'destra') { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, W, H); }
-    else if (state.logo) {
-      // logo ripetuto a motivo, sfasato riga per riga
-      const lh = 90, gap = 70, lum0 = imageLuminance(state.logo);
-      g.globalAlpha = contrast(lum(bg), lum0) < 1.6 ? 0.18 : 0.9;
-      for (let y = 40, r = 0; y < H; y += lh + gap, r++) for (let x = (r % 2) * 160 - 40; x < W; x += 320) drawContain(g, state.logo, x, y, 240, lh);
-      g.globalAlpha = 1;
-    } else brandWord(g, 0, H * 0.35, W, H * 0.3, readable(bg));
-  }
+  const V = variant(), W = c.width, H = c.height, style = V.wall;
+  const cols = kind === 'fondo' ? [V.P, V.S, V.A] : kind === 'sinistra' ? [V.S, V.A, V.P] : [V.S, V.P, V.A];
+  const [a, b, d] = cols;
+  if (style === 'tinta') { g.fillStyle = kind === 'fondo' ? a : b; g.fillRect(0, 0, W, H); }
+  else if (style === 'blocchi') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.fillRect(0, H * 0.58, W, H * 0.42); g.fillStyle = d; g.fillRect(0, H * 0.55, W, H * 0.03); }
+  else if (style === 'fasce') { const n = 5; for (let i = 0; i < n; i++) { g.fillStyle = [a, b, a, d, b][i]; g.fillRect(0, (H / n) * i, W, H / n + 1); } }
+  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(0.55, mix(a, b, 0.5)); gr.addColorStop(1, b); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+  else if (style === 'diagonale') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill(); g.strokeStyle = d; g.lineWidth = 36; g.beginPath(); g.moveTo(0, H * 0.35); g.lineTo(W, H * 0.8); g.stroke(); }
+  else if (style === 'chevron') { g.fillStyle = a; g.fillRect(0, 0, W, H); const step = 220; for (let y = H * 0.25, i = 0; y < H + step; y += step, i++) { g.strokeStyle = i % 2 ? d : b; g.lineWidth = 70; g.beginPath(); for (let x = -step, k = 0; x <= W + step; x += step / 2, k++) g.lineTo(x, y + (k % 2 ? -60 : 60)); g.stroke(); } }
+  // fascia in alto nel colore principale: incornicia il banner
+  if (kind === 'fondo') { g.fillStyle = V.P; g.fillRect(0, 0, W, H * 0.14); }
   return c;
 }
 function wallTexture() {
@@ -226,7 +231,8 @@ function applyAll() {
   // banner in alto (logo_3)
   {
     const c = panelCanvas('logo_3'), g = c.getContext('2d');
-    let bg = state.bannerBg === 'bianco' ? '#ffffff' : C.primary;
+    const Vb = variant();
+    let bg = state.bannerBg === 'bianco' ? '#ffffff' : (state.bannerBg === 'auto' && (state.variant || 0) % 2 === 1 ? '#ffffff' : Vb.P);
     if (state.bannerBg === 'auto' && state.logo && contrast(lum(C.primary), logoLum) < 2.2) bg = '#ffffff';
     g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
     if (state.logo) drawContain(g, state.logo, c.width * 0.08, c.height * 0.16, c.width * 0.84, c.height * 0.68);
@@ -245,37 +251,44 @@ function applyAll() {
       g.fillStyle = crateBg === '#ffffff' ? C.primary : readable(crateBg); g.textAlign = 'center'; g.textBaseline = 'middle';
       fitText(g, state.tagline, c.width * 0.84, tagH * 0.75, 600, state.font); g.fillText(state.tagline, c.width / 2, c.height * 0.84);
     }
-    g.fillStyle = C.accent; g.fillRect(0, c.height - c.height * 0.03, c.width, c.height * 0.03);
+    g.fillStyle = variant().A; g.fillRect(0, c.height - c.height * 0.03, c.width, c.height * 0.03);
     setPanel('logo_1', c);
   }
   // bordo superiore cassa e piani dei banchi: tinta unita
   for (const n of ['logo_2', 'banco_1', 'banco_3']) {
     const c = panelCanvas(n, 64), g = c.getContext('2d'); g.fillStyle = n === 'logo_2' ? C.accent : C.primary; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
   }
-  // alzate dei banchi laterali (banco_2, banco_4)
+  // alzate dei banchi laterali (banco_2, banco_4): pannelli piani, qui foto e scritte reggono
+  const Va = variant();
   for (const n of ['banco_2', 'banco_4']) {
     const c = panelCanvas(n), g = c.getContext('2d'); const W = c.width, H = c.height;
-    g.fillStyle = C.secondary; g.fillRect(0, 0, W, H);
-    if (state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, 0, W, H); }
-    const ink = state.hero ? '#ffffff' : readable(C.secondary);
     const msg = (state.tagline || state.brand || '').toUpperCase();
-    if (msg) {
-      g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = 'left';
-      const size = fitText(g, msg, W * 0.55, H * 0.42, 700);
+    const style = Va.alzata, bg = style === 'blocchi' ? Va.P : Va.S;
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    if (style === 'testo' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, W, H); }
+    if (style === 'blocchi') { for (let x = 0, i = 0; x < W; x += H * 3, i++) { g.fillStyle = i % 2 ? Va.A : Va.P; g.fillRect(x, 0, H * 3, H); } }
+    const ink = style === 'testo' && state.hero ? '#ffffff' : readable(bg);
+    g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = 'left';
+    if (style === 'logo' && state.logo) {
+      const lum0 = imageLuminance(state.logo); g.globalAlpha = contrast(lum(bg), lum0) < 1.6 ? 0.25 : 1;
+      for (let x = H * 0.4; x < W; x += H * 2.4) drawContain(g, state.logo, x, H * 0.18, H * 1.8, H * 0.64);
+      g.globalAlpha = 1;
+    } else if (msg) {
+      fitText(g, msg, W * 0.55, H * 0.42, 700);
       const step = g.measureText(msg).width + H * 1.6; let x = H * 0.5, i = 0;
       while (x < W) {
-        if (state.logo && i % 2 === 1) { drawContain(g, state.logo, x, H * 0.2, H * 1.2, H * 0.6); x += H * 1.6; }
-        else { g.fillText(msg, x, H / 2); x += step; }
+        if (state.logo && i % 2 === 1 && style !== 'blocchi') { drawContain(g, state.logo, x, H * 0.2, H * 1.2, H * 0.6); x += H * 1.6; }
+        else { g.fillStyle = style === 'blocchi' ? readable(i % 2 ? Va.A : Va.P) : ink; g.fillText(msg, x, H / 2); x += step; }
         i++;
       }
     }
     setPanel(n, c);
   }
-  // nicchie: palette a rotazione
-  const pal = [C.primary, C.accent, C.secondary];
+  const Vn = variant();
+  const pal = Vn.nicchie === 'una' ? [Vn.A] : Vn.nicchie === 'sfumate' ? [Vn.P, mix(Vn.P, Vn.S, 0.5), Vn.S] : [Vn.P, Vn.A, Vn.S];
   for (let i = 1; i <= 9; i++) {
     const n = 'nicchia_' + i; const c = panelCanvas(n, 64), g = c.getContext('2d');
-    g.fillStyle = pal[(i - 1) % 3]; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
+    g.fillStyle = pal[(i - 1) % pal.length]; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
   }
   // pareti: cartone bianco, tinta o stampa premium
   if (M.pareti.map) { M.pareti.map.dispose(); M.pareti.map = null; }
@@ -483,7 +496,7 @@ function decidePalette(logoCols, cssCols, tc) {
 async function analyzeSite() {
   let url = $('#url').value.trim(); if (!url) { setStatus('Scrivi l\'indirizzo del sito.'); return; }
   if (!WORKER) { setStatus('Servizio di lettura dei siti non configurato.'); return; }
-  busy(true); setStatus('Leggo il sito…'); $('#go').disabled = true;
+  busy(true); state.variant = 0; setStatus('Leggo il sito…'); $('#go').disabled = true;
   try {
     const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`);
     const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
@@ -590,6 +603,7 @@ function syncUI() {
   $('#brand').value = state.brand; $('#tagline').value = state.tagline;
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
   $('#products').checked = state.products;
+  $('#vn').textContent = (state.variant || 0) === 0 ? 'Proposta' : 'Variante ' + (state.variant + 1); $('#prev').disabled = !(state.variant > 0);
   // logo preview
   const lp = $('#logo-prev'); lp.innerHTML = '';
   if (state.logo) { const c = document.createElement('canvas'); c.width = 240; c.height = 90; drawContain(c.getContext('2d'), state.logo, 0, 0, 240, 90); lp.append(c); } else lp.textContent = 'Nessun logo';
@@ -639,6 +653,8 @@ $('#url').addEventListener('change', () => {
 });
 $('#ai').addEventListener('click', aiDirect);
 $('#go').addEventListener('click', analyzeSite);
+$('#regen').addEventListener('click', () => { state.variant = (state.variant || 0) + 1; applyAll(); });
+$('#prev').addEventListener('click', () => { state.variant = Math.max(0, (state.variant || 0) - 1); applyAll(); });
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyzeSite(); });
 for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => { state.colors[k] = e.target.value; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85); applyAll(); });
 $('#brand').addEventListener('input', (e) => { state.brand = e.target.value; applyAll(); });
@@ -646,7 +662,7 @@ $('#tagline').addEventListener('input', (e) => { state.tagline = e.target.value;
 document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { state[b.dataset.opt] = b.dataset.val; applyAll(); }));
 $('#products').addEventListener('change', (e) => { state.products = e.target.checked; applyAll(); });
 $('#reset').addEventListener('click', () => {
-  Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
+  Object.assign(state, { variant: 0, font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
   state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
 });
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {

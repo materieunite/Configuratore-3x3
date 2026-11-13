@@ -53,6 +53,9 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
 .cand.in-use{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}.cand button.sel{color:#fff;background:var(--ink)}
 #ideas{display:flex;flex-wrap:wrap;gap:6px}#ideas:empty{display:none}
 .idea{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font:500 12px "DM Sans",system-ui,sans-serif;cursor:pointer;color:var(--ink)}.idea.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
+.regen{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:10px;padding:4px 4px 4px 6px}
+.regen #prev{border:0;background:transparent;font-size:20px;line-height:1;padding:2px 6px;cursor:pointer;color:var(--ink)}.regen #prev:disabled{opacity:.25;cursor:default}
+.regen #vn{font:500 12px "IBM Plex Mono",ui-monospace,monospace;color:var(--mute);min-width:78px;text-align:center}
 </style>
 <script>window.PANELS={"logo_1": {"w": 0.725, "h": 0.676}, "logo_2": {"w": 0.725, "h": 0.137}, "logo_3": {"w": 1.585, "h": 0.409}, "banco_1": {"w": 0.299, "h": 2.493}, "banco_2": {"w": 2.433, "h": 0.244}, "banco_3": {"w": 0.299, "h": 2.493}, "banco_4": {"w": 2.433, "h": 0.244}, "nicchia_1": {"w": 0.239, "h": 0.286}, "nicchia_2": {"w": 0.239, "h": 0.286}, "nicchia_3": {"w": 0.239, "h": 0.286}, "nicchia_4": {"w": 0.239, "h": 0.286}, "nicchia_5": {"w": 0.239, "h": 0.286}, "nicchia_6": {"w": 0.239, "h": 0.286}, "nicchia_7": {"w": 0.239, "h": 0.286}, "nicchia_8": {"w": 0.239, "h": 0.286}, "nicchia_9": {"w": 0.239, "h": 0.286}};</script>
 </head>
@@ -97,7 +100,7 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
   <div class="lab"><span>3 · Allestimento</span></div>
   <div class="opt"><span>Banner</span><div class="seg"><button data-opt="bannerBg" data-val="auto">Auto</button><button data-opt="bannerBg" data-val="primary">Colore</button><button data-opt="bannerBg" data-val="bianco">Bianco</button></div></div>
   <div class="opt"><span>Pareti</span><div class="seg"><button data-opt="walls" data-val="bianco">Cartone bianco</button><button data-opt="walls" data-val="tinta">Tinta</button><button data-opt="walls" data-val="stampa">Stampate ★</button></div></div>
-  <p class="hint">★ Premium: pareti stampate con foto, colori e logo del brand.</p>
+  <p class="hint">★ Premium: pareti stampate nei colori del brand.</p>
   <div class="opt"><span>Cassa</span><div class="seg"><button data-opt="crate" data-val="naturale">Legno naturale</button><button data-opt="crate" data-val="tinta">Tinto</button></div></div>
   <label class="chk"><input type="checkbox" id="products"> Mostra prodotti sugli scaffali</label>
 
@@ -107,7 +110,7 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
   <canvas id="c"></canvas>
   <div id="loading">Carico il modello…</div>
   <div class="views"><button data-view="iso">Vista</button><button data-view="front">Fronte</button><button data-view="side">Lato</button><button data-view="top">Pianta</button></div>
-  <div class="tr"><button class="btn ghost" id="shot" hidden style="background:#fff">Salva immagine</button></div>
+  <div class="tr"><div class="regen"><button id="prev" title="Variante precedente">‹</button><span id="vn">Proposta</span><button id="regen" class="btn">Rigenera ↻</button></div><button class="btn ghost" id="shot" hidden style="background:#fff">Salva immagine</button></div>
 </main>
 </div>
 <script src="./config.js"></script>
