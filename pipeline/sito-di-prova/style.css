@@ -1,3 +1,5 @@
 :root{--brand-primary:#0e5c46;--brand-accent:#f06e3c;--grey:#eeeeee}
 body{font-family:"Fraunces",serif;color:#222;background:#fff}
 .btn{background:var(--brand-primary);color:#fff}.tag{color:#f06e3c}.x{border:1px solid #e6b43c}
+
+:root{--wp--preset--color--vivid-red:#cf2e2e;--wp-admin-theme-color:#007cba;--wp--preset--color--yellow:#ffc31f}

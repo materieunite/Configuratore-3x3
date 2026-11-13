@@ -354,7 +354,22 @@ async function proxImg(u) {
   const r = await fetch(viaProxy(u)); if (!r.ok) throw new Error('img ' + r.status);
   const b = await r.blob(); return blobToImg(b, new URL(u).pathname);
 }
-function svgToImg(svg) { return blobToImg(new Blob([svg], { type: 'image/svg+xml' }), 'logo.svg'); }
+function svgToImg(svg) {
+  svg = svg.replace(/\sviewbox=/i, ' viewBox=').replace(/\spreserveaspectratio=/i, ' preserveAspectRatio=');
+  const vb = svg.match(/viewBox="([\d.\s-]+)"/);
+  if (vb && !/<svg[^>]*\swidth=/i.test(svg)) { const [, , w, h] = vb[1].trim().split(/\s+/).map(Number); if (w && h) { const k = 1600 / Math.max(w, h); svg = svg.replace('<svg', `<svg width="${w * k}" height="${h * k}"`); } }
+  return blobToImg(new Blob([svg], { type: 'image/svg+xml' }), 'logo.svg');
+}
+// palette di default di WordPress e Gutenberg: non sono colori del brand
+const WP_DEFAULT = new Set(['#007cba', '#006ba1', '#005a87', '#000000', '#ffffff', '#abb8c3', '#f78da7', '#cf2e2e', '#ff6900', '#fcb900', '#7bdcb5', '#00d084', '#8ed1fc', '#0693e3', '#9b51e0', '#7a00df', '#dddddd', '#32373c', '#dc3232', '#2271b1', '#3858e9', '#1e1e1e', '#757575', '#cccccc', '#00a0d2']);
+const WP_DEFAULT_NAMES = /^(black|white|cyan-bluish-gray|pale-pink|vivid-red|luminous-vivid-orange|luminous-vivid-amber|light-green-cyan|vivid-green-cyan|pale-cyan-blue|vivid-cyan-blue|vivid-purple)$/;
+function brandColors(d) {
+  const ok = (h) => { const [s, l] = rgbToHsl(hexToRgb(h)); return s > 0.18 && l > 0.08 && l < 0.9; };
+  const vars = d.cssVars || [];
+  const themeVars = vars.filter(v => { const m = v.name.match(/^--wp--preset--color--(.+)$/); return m ? !WP_DEFAULT_NAMES.test(m[1]) : !/^--wp/.test(v.name) && /primary|brand|accent|main|secondary|highlight|theme|corporate|color/.test(v.name); }).map(v => v.hex);
+  const counted = (d.colors || []).map(c => c.hex).filter(h => !WP_DEFAULT.has(h));
+  return [...new Set([...themeVars, ...counted])].filter(ok);
+}
 async function analyzeSite() {
   let url = $('#url').value.trim(); if (!url) { setStatus('Scrivi l\'indirizzo del sito.'); return; }
   if (!WORKER) { setStatus('Servizio di lettura dei siti non configurato.'); return; }
@@ -365,7 +380,7 @@ async function analyzeSite() {
     state.candidates = state.candidates.filter(c => c.src !== 'sito');
     const jobs = [], seenU = new Set();
     const add = (p, name, kind, u) => { if (u) { if (seenU.has(u)) return; seenU.add(u); } jobs.push(p.then(img => { state.candidates.push({ img, name, kind, src: 'sito', w: img.width || img.naturalWidth }); }).catch(() => { })); };
-    d.logo.svg.forEach((s, i) => add(svgToImg(s), 'logo SVG ' + (i + 1), 'logo'));
+    [...new Set(d.logo.svg)].forEach((s, i) => add(svgToImg(s), 'logo SVG ' + (i + 1), 'logo'));
     d.logo.img.forEach((l) => add(proxImg(l.url), l.alt || 'logo', 'logo', l.url));
     if (d.logo.jsonLd) add(proxImg(d.logo.jsonLd), 'logo (dati strutturati)', 'logo', d.logo.jsonLd);
     const icons = d.logo.icons.filter(i => /apple-touch|mask-icon/.test(i.rel) || /(\d{3})/.test(i.sizes || '') || /\.svg/i.test(i.url));
@@ -381,9 +396,11 @@ async function analyzeSite() {
     const photos = sito.filter(c => c.kind === 'immagine').sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height));
     state.hero = photos[0] ? photos[0].img : state.hero;
     // colori: theme-color e CSS (pesati), poi palette del logo
-    const cssCols = (d.colors || []).map(c => c.hex).filter(h => { const [s, l] = rgbToHsl(hexToRgb(h)); return s > 0.18 && l > 0.08 && l < 0.9; });
+    const cssCols = brandColors(d);
     const logoCols = state.logo ? extractPalette([state.logo]) : [];
-    const P = [...new Set([...(d.themeColor && /^#/.test(d.themeColor) ? [toHex6(d.themeColor)] : []), ...logoCols, ...cssCols])].filter(Boolean);
+    const tc = d.themeColor && /^#/.test(d.themeColor) ? toHex6(d.themeColor) : null;
+    const tcOk = tc && (() => { const [s2, l2] = rgbToHsl(hexToRgb(tc)); return s2 > 0.18 && l2 > 0.08 && l2 < 0.9; })();
+    const P = [...new Set([...(tcOk ? [tc] : []), ...logoCols, ...cssCols])].filter(Boolean);
     const distinct = []; for (const h of P) if (distinct.every(x => dist(hexToRgb(x), hexToRgb(h)) > 50)) distinct.push(h);
     if (distinct[0]) state.colors.primary = distinct[0];
     state.colors.accent = distinct[1] || mix(state.colors.primary, '#000000', 0.3);
@@ -394,7 +411,7 @@ async function analyzeSite() {
     const desc = (d.description || '').split(/[.!?|–—]/)[0].trim();
     if (desc && desc.split(/\s+/).length <= 7) state.tagline = desc;
     // font del brand (Google Fonts)
-    const gf = d.fonts && d.fonts.google && d.fonts.google[0];
+    const gf = (d.fonts && d.fonts.google && d.fonts.google[0]) || (d.fonts && d.fonts.css && d.fonts.css[0]);
     if (gf) await loadGoogleFont(gf);
     applyAll();
     setStatus(`Letto ${new URL(d.url).hostname}: ${sito.length} immagini${gf ? ', font ' + gf : ''}. Controlla logo e colori.`);
@@ -408,7 +425,7 @@ async function loadGoogleFont(fam) {
     const l = document.createElement('link'); l.rel = 'stylesheet';
     l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fam).replace(/%20/g, '+')}:wght@400;500;700&display=swap`;
     document.head.append(l); await new Promise(r => { l.onload = r; l.onerror = r; setTimeout(r, 3000); });
-    await document.fonts.load(`700 40px "${fam}"`); state.font = fam;
+    const f = await document.fonts.load(`700 40px "${fam}"`); if (f && f.length) state.font = fam;
   } catch { }
 }
 
