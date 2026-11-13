@@ -362,7 +362,7 @@ function logoOn(bg) {
 }
 
 let _raf = 0;
-function applyAll() { if (_raf) return; _raf = requestAnimationFrame(() => { _raf = 0; render(); }); }
+function applyAll() { if (_raf) return; _raf = setTimeout(() => { _raf = 0; render(); }, 0); }
 function render() {
   if (!model) return;
   const D = computeDesign(); state.design = D; const R = D.R;
@@ -592,6 +592,10 @@ function cleanName(name, host) {
     .replace(/\b(uk|us|usa|eu|europe|international|official( site| website)?|sito ufficiale|online shop|shop online|store|homepage|home)\b/gi, ' ')
     .replace(/\s{2,}/g, ' ').replace(/^[\s\-–|,:·]+|[\s\-–|,:·]+$/g, '').trim();
   const label = (host || '').replace(/^www\./, '').split('.')[0].replace(/[-_]+/g, ' ');
+  // se nel nome c'è la parola del dominio (BMW, Ferrari), vince quella
+  const lw = label.split(' ')[0];
+  const hit = raw.match(new RegExp('\\b' + lw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'));
+  if (hit && n.toLowerCase() !== hit[0].toLowerCase() && (n.split(/\s+/).length > 1 && /^(il|lo|la|i|gli|le|del|della|di|da|the|of|by|le|la|der|die|das)\b/i.test(n) || n.split(/\s+/).length > 3)) return hit[0];
   if (!n || n.split(/\s+/).length > 3) {
     const first = label.split(' ')[0];
     const m = raw.match(new RegExp('\\b' + first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'));
