@@ -7,7 +7,7 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const MAX_HTML = 3_000_000, MAX_CSS = 1_500_000, MAX_IMG = 10_000_000;
-const VERSION = '2026-11-13.3';
+const VERSION = '2026-11-13.4';
 
 export default {
   async fetch(req, env, ctx) {
@@ -26,7 +26,7 @@ export default {
         let hit = await cache.match(key);
         if (hit) { const h = new Headers(hit.headers); for (const [k, v] of Object.entries(cors)) h.set(k, v); return new Response(hit.body, { headers: h }); }
         const data = await brand(target, env);
-        ctx.waitUntil(cache.put(key, json(data, 200, { 'Cache-Control': 'public, max-age=21600' })));
+        ctx.waitUntil(cache.put(key, json(data, 200, { 'Cache-Control': 'public, max-age=3600' })));
         return json(data, 200, { ...cors, 'Cache-Control': 'public, max-age=21600' });
       }
       if (u.pathname === '/img') {
@@ -79,7 +79,8 @@ function json(o, status, headers) { return new Response(JSON.stringify(o), { sta
 
 // ---------------- analisi ----------------
 const attr = (tag, name) => { const m = tag.match(new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')); return m ? decode(m[2] ?? m[3] ?? m[4] ?? '') : null; };
-const decode = (s) => s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x2F;/gi, '/');
+const ENT = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»', agrave: 'à', aacute: 'á', egrave: 'è', eacute: 'é', igrave: 'ì', iacute: 'í', ograve: 'ò', oacute: 'ó', ugrave: 'ù', uacute: 'ú', Agrave: 'À', Egrave: 'È', Eacute: 'É', ccedil: 'ç', ntilde: 'ñ', auml: 'ä', ouml: 'ö', uuml: 'ü', szlig: 'ß', copy: '©', reg: '®', trade: '™', middot: '·', bull: '•' };
+const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);?/gi, (m, e) => e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENT[e] ?? m));
 const abs = (h, base) => { try { return new URL(h, base).href; } catch { return null; } };
 
 async function brand(target, env) {
@@ -112,8 +113,10 @@ async function brand(target, env) {
   const header = (html.match(/<header[\s\S]*?<\/header>/i) || [''])[0];
   const origin = finalUrl.origin;
   const isHome = (href) => { if (!href) return false; try { const h = new URL(href, base); return h.origin === origin && (h.pathname === '/' || /^\/[a-z]{2}([-_][a-z]{2})?\/?$/i.test(h.pathname) || /^\/(home|index\.html?)\/?$/i.test(h.pathname)); } catch { return false; } };
-  const homeLinks = [...html.slice(0, 600_000).matchAll(/<a\s[^>]*>[\s\S]{0,40000}?<\/a>/gi)].map(m => m[0]).filter(a => isHome(attr(a.slice(0, a.indexOf('>') + 1), 'href'))).slice(0, 8).join('\n');
-  const ICON = /icon|menu|search|cart|bag|basket|user|account|login|close|arrow|chevron|caret|burger|gift|heart|wish|favou?rite|play|pause|social|facebook|instagram|twitter|youtube|linkedin|pinterest|tiktok|whatsapp|globe|lang|flag|star|rating|phone|mail|location|marker|share|plus|minus|filter|sort|toggle|spinner|loader|check|info|warning|payment|visa|mastercard|paypal|badge|award|trustpilot/i;
+  const homeLinks = [...html.slice(0, 300_000).matchAll(/<a\s[^>]*>[\s\S]{0,40000}?<\/a>/gi)].map(m => m[0]).filter(a => isHome(attr(a.slice(0, a.indexOf('>') + 1), 'href'))).slice(0, 2).join('\n');
+  const label = finalUrl.hostname.replace(/^www\d?\./, '').split('.')[0].toLowerCase();
+  const BRANDED = new RegExp(label.replace(/[^a-z0-9]/g, '.?'), 'i');
+  const ICON = /bcorp|b-corp|certif|scalapay|klarna|satispay|apple-pay|google-pay|amex|icon|menu|search|cart|bag|basket|user|account|login|close|arrow|chevron|caret|burger|gift|heart|wish|favou?rite|play|pause|social|facebook|instagram|twitter|youtube|linkedin|pinterest|tiktok|whatsapp|globe|lang|flag|star|rating|phone|mail|location|marker|share|plus|minus|filter|sort|toggle|spinner|loader|check|info|warning|payment|visa|mastercard|paypal|badge|award|trustpilot/i;
   const LOGO = /logo|brand|wordmark|marchio|logotype/i;
   const candidates = [];
   const seen = new Set();
@@ -123,7 +126,7 @@ async function brand(target, env) {
     let src = attr(t, 'src') || attr(t, 'data-src') || attr(t, 'data-lazy-src');
     const srcset = attr(t, 'srcset') || attr(t, 'data-srcset');
     if (srcset) { const best = srcset.split(',').map(x => x.trim().split(/\s+/)).sort((a, b) => parseFloat(b[1] || 0) - parseFloat(a[1] || 0))[0]; if (best?.[0]) src = best[0]; }
-    if (!src || src.startsWith('data:')) continue;
+    if (!src || src.startsWith('data:') || /%22|\\"|^["']/.test(src)) continue;
     const url = abs(src, base); if (!url || seen.has(url)) continue; seen.add(url);
     const hint = [attr(t, 'alt'), attr(t, 'class'), attr(t, 'id'), attr(t, 'title'), src.split('?')[0]].join(' ');
     const inHeader = header.includes(t), inHome = homeLinks.includes(t);
@@ -134,6 +137,8 @@ async function brand(target, env) {
     if (inHeader) score += 10;
     if (ICON.test(hint) && !LOGO.test(hint)) score -= 80;
     if (/\.svg(\?|$)/i.test(src)) score += 10;
+    if (BRANDED.test(hint)) score += 30;
+    if (/^(image|img|foto|photo|banner)$/i.test((attr(t, 'alt') || '').trim()) && !LOGO.test(src)) score -= 30;
     if (w && h && Math.max(w, h) <= 48) score -= 60;
     if (score >= 40) candidates.push({ type: 'img', url, alt: attr(t, 'alt'), score });
     else if (photos.length < 12 && !ICON.test(hint) && !(w && h && Math.max(w, h) < 200)) photos.push({ url, alt: attr(t, 'alt'), w: w || null, h: h || null });
@@ -155,6 +160,7 @@ async function brand(target, env) {
     if (w && h && Math.max(w, h) <= 48 && ar > 0.6 && ar < 1.6) score -= 60;
     if (ar >= 1.8) score += 15;
     if (sv.length > 1500) score += 10; else if (sv.length < 500) score -= 20;
+    if (BRANDED.test(hint)) score += 30;
     if (/<use\s/i.test(sv) && sv.length < 800) score -= 60; // riferimento a sprite, vuoto da solo
     if (score >= 40) candidates.push({ type: 'svg', svg: normalizeSvg(sv), score, w, h });
   }

@@ -501,6 +501,8 @@ async function analyzeSite() {
     const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`);
     const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
     const host = new URL(d.url).hostname;
+    const ta = document.createElement('textarea'); const dec = (x) => { ta.innerHTML = x || ''; return ta.value; };
+    d.name = dec(d.name); d.title = dec(d.title); d.description = dec(d.description);
     state.candidates = state.candidates.filter(c => c.src !== 'sito');
     const jobs = [], seenU = new Set(), logoC = [];
     const add = (p, name, kind, u, score = 0) => { if (u) { if (seenU.has(u)) return; seenU.add(u); } jobs.push(p.then(img => { const cd = { img, name, kind, src: 'sito', score, w: img.width || img.naturalWidth }; state.candidates.push(cd); if (kind !== 'immagine') logoC.push(cd); }).catch(() => { })); };
