@@ -124,10 +124,65 @@ new GLTFLoader().load('./stand.glb', (gltf) => {
     } else if (M[key]) o.material = M[key];
     if (key === 'prodotti') o.castShadow = false;
   });
+  const pw = model.getObjectByName('pareti'); if (pw && pw.isMesh) projectWallUV(pw); else if (pw) pw.traverse(o => o.isMesh && projectWallUV(o));
   scene.add(model);
   $('#loading').remove();
   applyAll();
 }, undefined, (e) => { $('#loading').textContent = 'Errore nel caricamento del modello'; console.error(e); });
+
+// ---------------- pareti stampate (premium) ----------------
+// UV proiettate: parete di fondo vista da davanti, pareti laterali viste da fuori.
+// Atlante: [0,0.5) fondo · [0.5,0.75) sinistra · [0.75,1] destra; v = quota.
+const WALL = { w: 3.04, h: 2.56 };
+function projectWallUV(mesh) {
+  mesh.updateMatrixWorld(true);
+  const g = mesh.geometry, p = g.attributes.position, uv = new Float32Array(p.count * 2), v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld);
+    const y = Math.min(1, Math.max(0, v.y / WALL.h));
+    let u;
+    if (v.z < -0.95) u = 0.5 * (v.x + WALL.w / 2) / WALL.w;
+    else if (v.x < 0) u = 0.5 + 0.25 * (v.z + WALL.w / 2) / WALL.w;
+    else u = 0.75 + 0.25 * (WALL.w / 2 - v.z) / WALL.w;
+    uv[i * 2] = Math.min(0.999, Math.max(0, u)); uv[i * 2 + 1] = y;
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+function wallArt(kind) {
+  // disegno in proporzioni reali (3,04 x 2,56 m), poi stirato nell'atlante
+  const c = document.createElement('canvas'); c.width = 1520; c.height = 1280; const g = c.getContext('2d');
+  const C = state.colors, W = c.width, H = c.height;
+  if (kind === 'fondo') {
+    if (state.hero) { drawCover(g, state.hero, W, H); const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(0,0,0,0.05)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+    else {
+      g.fillStyle = C.primary; g.fillRect(0, 0, W, H);
+      g.save(); g.translate(W / 2, H / 2); g.rotate(-0.35);
+      for (let i = -6; i < 7; i++) { g.fillStyle = i % 3 === 0 ? C.accent : i % 3 === 1 ? C.secondary : C.primary; g.globalAlpha = 0.85; g.fillRect(i * 230 - 60, -H, 120, H * 2); }
+      g.restore(); g.globalAlpha = 1;
+    }
+    // fascia in alto che incornicia il banner
+    g.fillStyle = C.primary; g.fillRect(0, 0, W, H * 0.14);
+    if (state.tagline) { g.fillStyle = state.hero ? '#ffffff' : readable(C.primary); g.textAlign = 'center'; g.textBaseline = 'middle'; fitText(g, state.tagline.toUpperCase(), W * 0.8, H * 0.07, 700); g.fillText(state.tagline.toUpperCase(), W / 2, H * 0.93); }
+  } else {
+    const bg = kind === 'sinistra' ? C.secondary : C.primary; g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    if (state.hero && kind === 'destra') { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, W, H); }
+    else if (state.logo) {
+      // logo ripetuto a motivo, sfasato riga per riga
+      const lh = 90, gap = 70, lum0 = imageLuminance(state.logo);
+      g.globalAlpha = contrast(lum(bg), lum0) < 1.6 ? 0.18 : 0.9;
+      for (let y = 40, r = 0; y < H; y += lh + gap, r++) for (let x = (r % 2) * 160 - 40; x < W; x += 320) drawContain(g, state.logo, x, y, 240, lh);
+      g.globalAlpha = 1;
+    } else brandWord(g, 0, H * 0.35, W, H * 0.3, readable(bg));
+  }
+  return c;
+}
+function wallTexture() {
+  const A = document.createElement('canvas'); A.width = 4096; A.height = 1536; const g = A.getContext('2d');
+  g.drawImage(wallArt('fondo'), 0, 0, 2048, 1536);
+  g.drawImage(wallArt('sinistra'), 2048, 0, 1024, 1536);
+  g.drawImage(wallArt('destra'), 3072, 0, 1024, 1536);
+  const t = new THREE.CanvasTexture(A); t.colorSpace = THREE.SRGBColorSpace; t.flipY = true; t.anisotropy = 8; return t;
+}
 
 // ---------------- composizione texture ----------------
 const PX = 900; // pixel per metro
@@ -188,7 +243,7 @@ function applyAll() {
     else brandWord(g, c.width * 0.1, c.height * 0.1, c.width * 0.8, c.height * 0.6, C.primary);
     if (state.tagline) {
       g.fillStyle = crateBg === '#ffffff' ? C.primary : readable(crateBg); g.textAlign = 'center'; g.textBaseline = 'middle';
-      fitText(g, state.tagline, c.width * 0.8, tagH * 0.55, 500, state.font); g.fillText(state.tagline, c.width / 2, c.height * 0.84);
+      fitText(g, state.tagline, c.width * 0.84, tagH * 0.75, 600, state.font); g.fillText(state.tagline, c.width / 2, c.height * 0.84);
     }
     g.fillStyle = C.accent; g.fillRect(0, c.height - c.height * 0.03, c.width, c.height * 0.03);
     setPanel('logo_1', c);
@@ -222,9 +277,11 @@ function applyAll() {
     const n = 'nicchia_' + i; const c = panelCanvas(n, 64), g = c.getContext('2d');
     g.fillStyle = pal[(i - 1) % 3]; g.fillRect(0, 0, c.width, c.height); setPanel(n, c);
   }
-  // pareti
-  M.pareti.color.set(state.walls === 'tinta' ? mix(C.neutral, '#ffffff', 0.25) : '#ecebe6');
-  M.bordo.color.set(M.pareti.color);
+  // pareti: cartone bianco, tinta o stampa premium
+  if (M.pareti.map) { M.pareti.map.dispose(); M.pareti.map = null; }
+  if (state.walls === 'stampa') { M.pareti.map = wallTexture(); M.pareti.color.set('#ffffff'); M.bordo.color.set(mix(C.primary, '#ffffff', 0.1)); }
+  else { M.pareti.color.set(state.walls === 'tinta' ? mix(C.neutral, '#ffffff', 0.25) : '#ecebe6'); M.bordo.color.set(M.pareti.color); }
+  M.pareti.needsUpdate = true;
   // cassa
   if (M.cassa.map) M.cassa.map.dispose();
   M.cassa.map = woodTexture(state.crate === 'tinta' ? C.secondary : null); M.cassa.needsUpdate = true;
@@ -370,55 +427,112 @@ function brandColors(d) {
   const counted = (d.colors || []).map(c => c.hex).filter(h => !WP_DEFAULT.has(h));
   return [...new Set([...themeVars, ...counted])].filter(ok);
 }
+const FRAMEWORK_COLORS = new Set(('#007aff #007bff #0d6efd #6610f2 #6f42c1 #d63384 #dc3545 #fd7e14 #ffc107 #198754 #28a745 #20c997 #0dcaf0 #17a2b8 #6c757d #343a40 #212529 #f8f9fa #337ab7 #5cb85c #5bc0de #f0ad4e #d9534f ' +
+  '#2563eb #3b82f6 #1d4ed8 #60a5fa #93c5fd #bfdbfe #dbeafe #ec4899 #6366f1 #4f46e5 #8b5cf6 #10b981 #ef4444 #f59e0b #1f2937 #111827 #374151 #4b5563 #6b7280 #9ca3af #d1d5db #e5e7eb #f3f4f6 #99c2ff ' +
+  '#a5dc86 #f27474 #f8bb86 #3fc3ee #87adbd #c9dae1 #3085d6 #7066e0 #2b333f #73859f ' +
+  '#2196f3 #4caf50 #f44336 #ff9800 #9c27b0 #e91e63 #3f51b5 #00bcd4 #009688 #ffeb3b #795548 #607d8b ' +
+  '#3b5998 #1877f2 #1da1f2 #55acee #e1306c #c13584 #0077b5 #0a66c2 #bd081c #25d366 #ffb3c7 #003087 #009cde #0070ba #ffc439 #0073ce #1863dc #68b631 #4285f4 #34a853 #fbbc05 #ea4335 #ff0000').split(' '));
+function cleanName(name, host) {
+  const raw = (name || '').trim();
+  let n = raw.replace(/\s*[\(\[][^\)\]]*[\)\]]\s*/g, ' ')
+    .replace(/\b(s\.?\s?p\.?\s?a\.?|s\.?r\.?l\.?s?|ab|gmbh|ag|inc|ltd|llc|plc|b\.?v\.?|s\.?a\.?s?)\b\.?/gi, ' ')
+    .replace(/\b(uk|us|usa|eu|europe|international|official( site| website)?|sito ufficiale|online shop|shop online|store|homepage|home)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ').replace(/^[\s\-–|,:·]+|[\s\-–|,:·]+$/g, '').trim();
+  const label = (host || '').replace(/^www\./, '').split('.')[0].replace(/[-_]+/g, ' ');
+  if (!n || n.split(/\s+/).length > 3) {
+    const first = label.split(' ')[0];
+    const m = raw.match(new RegExp('\\b' + first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'));
+    n = m ? m[0] : label.replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return n;
+}
+function taglineIdeas(d, brand) {
+  const out = [], seen = new Set(), b = (brand || '').toLowerCase();
+  const push = (t) => {
+    t = (t || '').replace(/\s+/g, ' ').replace(/^[\s\-–|,:·"“]+|[\s\-–|,:·"”.]+$/g, '').trim();
+    const w = t.split(/\s+/).length; const k = t.toLowerCase();
+    if (!t || w < 2 || w > 7 || seen.has(k) || k === b || /cookie|javascript|browser|homepage|benvenut|welcome/i.test(t)) return;
+    seen.add(k); out.push(t);
+  };
+  for (const src of [d.description, d.title]) for (const part of String(src || '').split(/[.!?;|–—•·]|\s-\s/)) {
+    push(part); for (const sub of part.split(',')) push(sub);
+  }
+  return out.slice(0, 4);
+}
+function logoQuality(img) {
+  const W = img.width || img.naturalWidth, H = img.height || img.naturalHeight; if (!W || !H) return { ok: false };
+  const k = 128 / Math.max(W, H), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+  const d = g.getImageData(0, 0, c.width, c.height).data; let op = 0, lo = 1, hi = 0, n = 0, sat = 0;
+  for (let i = 0; i < d.length; i += 16) { n++; if (d[i + 3] < 40) continue; op++; const l = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255; lo = Math.min(lo, l); hi = Math.max(hi, l); const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); sat += (mx - mn) / 255; }
+  const fill = op / n, contrast = hi - lo, ar = W / H;
+  // vuoto, oppure un riquadro pieno e piatto: non è un logo usabile
+  const ok = fill > 0.02 && !(fill > 0.96 && contrast < 0.12);
+  return { ok, fill, ar, contrast, photo: fill > 0.96 && contrast > 0.5 && sat / Math.max(1, op) > 0.25 };
+}
+function decidePalette(logoCols, cssCols, tc) {
+  const satOk = (h) => { const [s2, l2] = rgbToHsl(hexToRgb(h)); return s2 > 0.25 && l2 > 0.1 && l2 < 0.88; };
+  const darkOk = (h) => { const [, l2] = rgbToHsl(hexToRgb(h)); return l2 < 0.25; };
+  const logoSat = logoCols.filter(satOk), logoDark = logoCols.filter(darkOk);
+  const pool = [...logoSat, ...(tc && satOk(tc) ? [tc] : []), ...cssCols];
+  const primary = logoSat[0] || (tc && satOk(tc) ? tc : null) || logoDark[0] || cssCols[0] || '#1d1d1b';
+  const distinct = [primary];
+  for (const h of pool) if (distinct.every(x => dist(hexToRgb(x), hexToRgb(h)) > 60)) distinct.push(h);
+  return distinct;
+}
 async function analyzeSite() {
   let url = $('#url').value.trim(); if (!url) { setStatus('Scrivi l\'indirizzo del sito.'); return; }
   if (!WORKER) { setStatus('Servizio di lettura dei siti non configurato.'); return; }
-  setStatus('Leggo il sito…'); $('#go').disabled = true;
+  busy(true); setStatus('Leggo il sito…'); $('#go').disabled = true;
   try {
     const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`);
     const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
+    const host = new URL(d.url).hostname;
     state.candidates = state.candidates.filter(c => c.src !== 'sito');
-    const jobs = [], seenU = new Set();
-    const add = (p, name, kind, u) => { if (u) { if (seenU.has(u)) return; seenU.add(u); } jobs.push(p.then(img => { state.candidates.push({ img, name, kind, src: 'sito', w: img.width || img.naturalWidth }); }).catch(() => { })); };
-    [...new Set(d.logo.svg)].forEach((s, i) => add(svgToImg(s), 'logo SVG ' + (i + 1), 'logo'));
-    d.logo.img.forEach((l) => add(proxImg(l.url), l.alt || 'logo', 'logo', l.url));
-    if (d.logo.jsonLd) add(proxImg(d.logo.jsonLd), 'logo (dati strutturati)', 'logo', d.logo.jsonLd);
-    const icons = d.logo.icons.filter(i => /apple-touch|mask-icon/.test(i.rel) || /(\d{3})/.test(i.sizes || '') || /\.svg/i.test(i.url));
-    icons.slice(0, 2).forEach(i => add(proxImg(i.url), 'icona', 'icona', i.url));
+    const jobs = [], seenU = new Set(), logoC = [];
+    const add = (p, name, kind, u, score = 0) => { if (u) { if (seenU.has(u)) return; seenU.add(u); } jobs.push(p.then(img => { const cd = { img, name, kind, src: 'sito', score, w: img.width || img.naturalWidth }; state.candidates.push(cd); if (kind !== 'immagine') logoC.push(cd); }).catch(() => { })); };
+    if (Array.isArray(d.logos)) d.logos.forEach((l, i) => l.type === 'svg' ? add(svgToImg(l.svg), 'logo SVG', 'logo', 'svg' + i, l.score) : add(proxImg(l.url), l.alt || 'logo', 'logo', l.url, l.score));
+    else { [...new Set(d.logo.svg)].forEach((s2, i) => add(svgToImg(s2), 'logo SVG', 'logo', null, 60)); d.logo.img.forEach((l) => add(proxImg(l.url), l.alt || 'logo', 'logo', l.url, 50)); if (d.logo.jsonLd) add(proxImg(d.logo.jsonLd), 'logo (dati strutturati)', 'logo', d.logo.jsonLd, 55); }
+    const icons = (d.logo.icons || []).filter(i => /apple-touch|mask-icon/.test(i.rel) || /(\d{3})/.test(i.sizes || '') || /\.svg/i.test(i.url));
+    icons.slice(0, 2).forEach(i => add(proxImg(i.url), 'icona del sito', 'icona', i.url, 5));
     if (d.images.og) add(proxImg(d.images.og), 'immagine di condivisione', 'immagine', d.images.og);
-    d.images.photos.slice(0, 6).forEach(p => add(proxImg(p.url), p.alt || 'foto', 'immagine', p.url));
+    d.images.photos.slice(0, 8).forEach(p => add(proxImg(p.url), p.alt || 'foto', 'immagine', p.url));
+    setStatus(`Scarico logo e immagini da ${host}…`);
     await Promise.all(jobs);
-    // logo: SVG > img "logo" grande > JSON-LD > icona
-    const rank = (c) => (c.kind === 'logo' ? 100 : c.kind === 'icona' ? 10 : 0) + (/SVG/.test(c.name) ? 30 : 0) + Math.min(30, (c.w || 0) / 20);
-    const sito = state.candidates.filter(c => c.src === 'sito');
-    const logo = sito.filter(c => c.kind !== 'immagine').sort((a, b) => rank(b) - rank(a))[0];
-    if (logo) state.logo = knockoutWhite(logo.img);
-    const photos = sito.filter(c => c.kind === 'immagine').sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height));
-    state.hero = photos[0] ? photos[0].img : state.hero;
-    // colori: theme-color e CSS (pesati), poi palette del logo
-    const cssCols = brandColors(d);
+    setStatus('Compongo lo stand…');
+    // logo: punteggio del Worker, poi verifica visiva (vuoto, riquadro pieno, foto)
+    const ranked = logoC.map(c => ({ c, q: logoQuality(c.img) })).filter(x => x.q.ok && !x.q.photo)
+      .sort((a, b) => (b.c.score + (b.q.ar > 1.6 ? 10 : 0) + (b.c.kind === 'icona' ? -40 : 0)) - (a.c.score + (a.q.ar > 1.6 ? 10 : 0) + (a.c.kind === 'icona' ? -40 : 0)));
+    const best = ranked[0] ? ranked[0].c : null;
+    state.logo = best ? knockoutWhite(best.img) : null; state.logoFrom = best;
+    const photos = state.candidates.filter(c => c.src === 'sito' && c.kind === 'immagine' && (c.img.width || c.img.naturalWidth) >= 400)
+      .sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height));
+    state.hero = photos[0] ? photos[0].img : null; state.heroFrom = photos[0] || null;
+    // colori: prima il logo, poi theme-color e CSS senza i colori dei framework
+    const cssCols = brandColors(d).filter(h => !FRAMEWORK_COLORS.has(h));
     const logoCols = state.logo ? extractPalette([state.logo]) : [];
     const tc = d.themeColor && /^#/.test(d.themeColor) ? toHex6(d.themeColor) : null;
-    const tcOk = tc && (() => { const [s2, l2] = rgbToHsl(hexToRgb(tc)); return s2 > 0.18 && l2 > 0.08 && l2 < 0.9; })();
-    const P = [...new Set([...(tcOk ? [tc] : []), ...logoCols, ...cssCols])].filter(Boolean);
-    const distinct = []; for (const h of P) if (distinct.every(x => dist(hexToRgb(x), hexToRgb(h)) > 50)) distinct.push(h);
-    if (distinct[0]) state.colors.primary = distinct[0];
-    state.colors.accent = distinct[1] || mix(state.colors.primary, '#000000', 0.3);
-    state.colors.secondary = distinct[2] || mix(state.colors.primary, '#ffffff', 0.6);
+    const distinct = decidePalette(logoCols, cssCols, tc);
+    state.colors.primary = distinct[0];
+    state.colors.accent = distinct[1] || mix(distinct[0], '#000000', 0.35);
+    state.colors.secondary = distinct[2] || mix(distinct[0], '#ffffff', 0.65);
     state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85);
-    state.palette = distinct.slice(0, 8);
-    state.brand = (d.name || '').trim() || state.brand;
-    const desc = (d.description || '').split(/[.!?|–—]/)[0].trim();
-    if (desc && desc.split(/\s+/).length <= 7) state.tagline = desc;
-    // font del brand (Google Fonts)
+    state.palette = [...new Set([...distinct, ...logoCols, ...cssCols])].slice(0, 10);
+    state.brand = cleanName(d.name, host) || state.brand;
+    state.ideas = taglineIdeas(d, state.brand);
+    state.tagline = state.ideas.find(t => t.split(/\s+/).length <= 6) || '';
     const gf = (d.fonts && d.fonts.google && d.fonts.google[0]) || (d.fonts && d.fonts.css && d.fonts.css[0]);
-    if (gf) await loadGoogleFont(gf);
+    state.font = null; if (gf) await loadGoogleFont(gf);
     applyAll();
-    setStatus(`Letto ${new URL(d.url).hostname}: ${sito.length} immagini${gf ? ', font ' + gf : ''}. Controlla logo e colori.`);
+    const nLogo = ranked.length;
+    setStatus(`Letto ${host}. ${best ? 'Logo trovato' : 'Logo non trovato: uso il nome del brand'}${nLogo > 1 ? ` (altri ${nLogo - 1} in “Materiale trovato”)` : ''}.${state.font ? ' Font ' + state.font + '.' : ''}`);
   } catch (e) {
-    console.error(e); setStatus('Non riesco a leggere il sito (' + (e.message || e) + '). Prova con il press kit.');
-  } finally { $('#go').disabled = false; }
+    console.error(e);
+    const m = String(e.message || e);
+    setStatus(/blocca/.test(m) ? 'Questo sito blocca la lettura automatica. Carica il logo o il press kit qui sotto.' : /non risponde|raggiungibile|52\d|504/.test(m) ? 'Il sito non risponde. Riprova più tardi o carica il press kit.' : 'Non riesco a leggere il sito (' + m + '). Carica il press kit.');
+  } finally { $('#go').disabled = false; busy(false); }
 }
+function busy(on) { $('#status').classList.toggle('busy', on); }
 function toHex6(h) { h = h.trim(); return /^#[0-9a-f]{3}$/i.test(h) ? '#' + [...h.slice(1)].map(c => c + c).join('') : h.slice(0, 7).toLowerCase(); }
 async function loadGoogleFont(fam) {
   try {
@@ -491,11 +605,18 @@ function syncUI() {
   state.candidates.forEach((cd, i) => {
     const d = document.createElement('div'); d.className = 'cand';
     const c = document.createElement('canvas'); c.width = 96; c.height = 72; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 96, 72); drawContain(g, cd.img, 4, 4, 88, 64);
-    const a = document.createElement('button'); a.textContent = 'Logo'; a.onclick = () => { state.logo = knockoutWhite(cd.img); applyAll(); };
-    const b = document.createElement('button'); b.textContent = 'Foto'; b.onclick = () => { state.hero = cd.img; applyAll(); };
+    const a = document.createElement('button'); a.textContent = state.logoFrom === cd ? '✓ Logo' : 'Logo'; a.className = state.logoFrom === cd ? 'sel' : '';
+    a.onclick = () => { state.logo = knockoutWhite(cd.img); state.logoFrom = cd; const lc = extractPalette([state.logo]); if (lc.length) state.palette = [...new Set([...lc, ...(state.palette || [])])].slice(0, 10); applyAll(); };
+    const b = document.createElement('button'); b.textContent = state.heroFrom === cd ? '✓ Foto' : 'Foto'; b.className = state.heroFrom === cd ? 'sel' : '';
+    b.onclick = () => { state.hero = cd.img; state.heroFrom = cd; applyAll(); };
+    d.classList.toggle('in-use', state.logoFrom === cd || state.heroFrom === cd);
     d.append(c, a, b); d.title = cd.name; cg.append(d);
   });
   $('#cands-wrap').hidden = !state.candidates.length;
+  $('#cands-n').textContent = state.candidates.length;
+  // idee per il messaggio
+  const ib = $('#ideas'); ib.innerHTML = '';
+  for (const t of state.ideas || []) { const b = document.createElement('button'); b.className = 'idea' + (t === state.tagline ? ' sel' : ''); b.textContent = t; b.onclick = () => { state.tagline = t; applyAll(); }; ib.append(b); }
 }
 
 $('#files').addEventListener('change', async (e) => { await handleFiles([...e.target.files]); e.target.value = ''; });
@@ -525,7 +646,7 @@ $('#tagline').addEventListener('input', (e) => { state.tagline = e.target.value;
 document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { state[b.dataset.opt] = b.dataset.val; applyAll(); }));
 $('#products').addEventListener('change', (e) => { state.products = e.target.checked; applyAll(); });
 $('#reset').addEventListener('click', () => {
-  Object.assign(state, { font: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
+  Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
   state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
 });
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
