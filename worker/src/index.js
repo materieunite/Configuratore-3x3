@@ -7,7 +7,7 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const MAX_HTML = 3_000_000, MAX_CSS = 1_500_000, MAX_IMG = 10_000_000;
-const VERSION = '2026-11-13.2';
+const VERSION = '2026-11-13.3';
 
 export default {
   async fetch(req, env, ctx) {
