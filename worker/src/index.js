@@ -7,7 +7,7 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const MAX_HTML = 3_000_000, MAX_CSS = 1_500_000, MAX_IMG = 10_000_000;
-const VERSION = '2026-11-13.5';
+const VERSION = '2026-11-13.6';
 
 export default {
   async fetch(req, env, ctx) {
@@ -137,7 +137,7 @@ async function brand(target, env) {
     if (inHeader) score += 10;
     if (ICON.test(hint) && !LOGO.test(hint)) score -= 80;
     if (/\.svg(\?|$)/i.test(src)) score += 10;
-    if (BRANDED.test(hint)) score += 30;
+    if (BRANDED.test([attr(t, 'alt'), src.split('?')[0].split('/').pop()].join(' '))) score += 30;
     if (/banner|editorial|promo|catalog|campaign|hero|slide|menu|thumb|product/i.test(src.split('?')[0]) && !/(^|[^a-z])logo/i.test(src)) score -= 40;
     if (/^(image|img|foto|photo|banner)$/i.test((attr(t, 'alt') || '').trim()) && !LOGO.test(src)) score -= 30;
     if (w && h && Math.max(w, h) <= 48) score -= 60;

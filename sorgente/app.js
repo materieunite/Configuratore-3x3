@@ -464,7 +464,7 @@ function taglineIdeas(d, brand) {
   const push = (t) => {
     t = (t || '').replace(/\s+/g, ' ').replace(/^[\s\-–|,:·"“]+|[\s\-–|,:·"”.]+$/g, '').trim();
     const w = t.split(/\s+/).length; const k = t.toLowerCase();
-    if (!t || w < 2 || w > 7 || seen.has(k) || k === b || /cookie|javascript|browser|homepage|benvenut|welcome|shop online|sito ufficiale|official/i.test(t)) return;
+    if (!t || w < 2 || w > 7 || seen.has(k) || k === b || /cookie|javascript|browser|homepage|benvenut|welcome|shop online|sito ufficiale|official|acquista|compra|shop now|buy now|scopri di più|learn more|read more|leggi|iscriviti|subscribe|newsletter|carrello|cart/i.test(t)) return;
     if (!/^[A-ZÀ-Ý0-9“"«]/.test(t)) return; // frammenti in minuscolo: congiunzioni, elenchi
     if (b && k.startsWith(b) && w <= 3) return; // tipo 'Patagonia UK'
     seen.add(k); out.push(t);
@@ -518,8 +518,9 @@ async function analyzeSite() {
     await Promise.all(jobs);
     setStatus('Compongo lo stand…');
     // logo: punteggio del Worker, poi verifica visiva (vuoto, riquadro pieno, foto)
-    const ranked = logoC.map(c => ({ c, q: logoQuality(c.img) })).filter(x => x.q.ok && !x.q.photo)
-      .sort((a, b) => (b.c.score + (b.q.ar > 1.6 ? 10 : 0) + (b.c.kind === 'icona' ? -40 : 0)) - (a.c.score + (a.q.ar > 1.6 ? 10 : 0) + (a.c.kind === 'icona' ? -40 : 0)));
+    // a parità di punteggio meglio un logo scuro e orizzontale: quelli bianchi spariscono sui pannelli chiari
+    const pts = (x) => x.c.score + (x.q.ar > 1.6 ? 10 : 0) + (x.c.kind === 'icona' ? -40 : 0) - (imageLuminance(x.c.img) > 0.8 ? 25 : 0);
+    const ranked = logoC.map(c => ({ c, q: logoQuality(c.img) })).filter(x => x.q.ok && !x.q.photo).sort((a, b) => pts(b) - pts(a));
     const best = ranked[0] ? ranked[0].c : null;
     state.logo = best ? knockoutWhite(best.img) : null; state.logoFrom = best;
     const photos = state.candidates.filter(c => c.src === 'sito' && c.kind === 'immagine' && (c.img.width || c.img.naturalWidth) >= 400)
