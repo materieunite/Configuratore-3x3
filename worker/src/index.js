@@ -1,4 +1,4 @@
-// Cloudflare Worker del configuratore stand.
+// Cloudflare Worker del configuratore stand (deploy automatico da GitHub, cartella worker/).
 //   GET /brand?url=https://sito.it   -> identità del brand ricavata dal sito (JSON)
 //   GET /img?u=https://sito.it/logo.png -> immagine del sito con intestazioni CORS
 // Variabili (wrangler.toml / pannello Cloudflare):
