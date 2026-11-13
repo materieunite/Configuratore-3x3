@@ -7,7 +7,7 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const MAX_HTML = 3_000_000, MAX_CSS = 1_500_000, MAX_IMG = 10_000_000;
-const VERSION = '2026-11-13.4';
+const VERSION = '2026-11-13.5';
 
 export default {
   async fetch(req, env, ctx) {
@@ -117,7 +117,7 @@ async function brand(target, env) {
   const label = finalUrl.hostname.replace(/^www\d?\./, '').split('.')[0].toLowerCase();
   const BRANDED = new RegExp(label.replace(/[^a-z0-9]/g, '.?'), 'i');
   const ICON = /bcorp|b-corp|certif|scalapay|klarna|satispay|apple-pay|google-pay|amex|icon|menu|search|cart|bag|basket|user|account|login|close|arrow|chevron|caret|burger|gift|heart|wish|favou?rite|play|pause|social|facebook|instagram|twitter|youtube|linkedin|pinterest|tiktok|whatsapp|globe|lang|flag|star|rating|phone|mail|location|marker|share|plus|minus|filter|sort|toggle|spinner|loader|check|info|warning|payment|visa|mastercard|paypal|badge|award|trustpilot/i;
-  const LOGO = /logo|brand|wordmark|marchio|logotype/i;
+  const LOGO = /(^|[^a-z]|site|main|header|footer)logo|wordmark|marchio|logotype|(^|[^a-z])brand(?!ed)/i;
   const candidates = [];
   const seen = new Set();
   const photos = [];
@@ -138,6 +138,7 @@ async function brand(target, env) {
     if (ICON.test(hint) && !LOGO.test(hint)) score -= 80;
     if (/\.svg(\?|$)/i.test(src)) score += 10;
     if (BRANDED.test(hint)) score += 30;
+    if (/banner|editorial|promo|catalog|campaign|hero|slide|menu|thumb|product/i.test(src.split('?')[0]) && !/(^|[^a-z])logo/i.test(src)) score -= 40;
     if (/^(image|img|foto|photo|banner)$/i.test((attr(t, 'alt') || '').trim()) && !LOGO.test(src)) score -= 30;
     if (w && h && Math.max(w, h) <= 48) score -= 60;
     if (score >= 40) candidates.push({ type: 'img', url, alt: attr(t, 'alt'), score });
