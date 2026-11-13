@@ -464,7 +464,9 @@ function taglineIdeas(d, brand) {
   const push = (t) => {
     t = (t || '').replace(/\s+/g, ' ').replace(/^[\s\-–|,:·"“]+|[\s\-–|,:·"”.]+$/g, '').trim();
     const w = t.split(/\s+/).length; const k = t.toLowerCase();
-    if (!t || w < 2 || w > 7 || seen.has(k) || k === b || /cookie|javascript|browser|homepage|benvenut|welcome/i.test(t)) return;
+    if (!t || w < 2 || w > 7 || seen.has(k) || k === b || /cookie|javascript|browser|homepage|benvenut|welcome|shop online|sito ufficiale|official/i.test(t)) return;
+    if (!/^[A-ZÀ-Ý0-9“"«]/.test(t)) return; // frammenti in minuscolo: congiunzioni, elenchi
+    if (b && k.startsWith(b) && w <= 3) return; // tipo 'Patagonia UK'
     seen.add(k); out.push(t);
   };
   for (const src of [d.description, d.title]) for (const part of String(src || '').split(/[.!?;|–—•·]|\s-\s/)) {
