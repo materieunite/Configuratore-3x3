@@ -9,6 +9,8 @@
 - `pipeline/sito-di-prova/` → sito finto usato per il collaudo locale del Worker.
 
 ## Stato
-- Collaudato in locale end-to-end (Worker + pagina) sul sito di prova.
-- Da fare: 1) Alessandro crea il Worker su Cloudflare (o via connettore) e fornisce l'URL `…workers.dev` → metterlo in `config.js`; 2) push su materieunite/Configuratore-3x3 e attivare GitHub Pages (branch main, root); 3) provare su siti reali (SVG inline, siti JS-only senza HTML server-side: in quel caso serve Browser Rendering di Cloudflare).
-- L'artefatto claude.ai precedente (con "Proposta di Claude") resta come demo; fuori dall'artefatto la proposta AI non c'è (servirebbe una chiave API lato Worker).
+- Online: pagina https://configuratore-3x3.pages.dev (Cloudflare Pages, deploy automatico da main) e Worker https://configuratore-stand.materieunite.workers.dev (Workers Builds da worker/, deploy automatico). Versione Worker in `VERSION`, anche nella chiave della cache.
+- Nessuna AI generativa: logo scelto a punteggio (Worker) + verifica visiva (pagina); colori da logo, theme-color e CSS senza palette dei framework; grafiche a regole.
+- Motore delle grafiche per parti (colori, logo, banner, fronte cassa, banchi laterali, nicchie, pareti stampate): seme e blocco per parte, Rigenera = genera 24 combinazioni e sceglie la migliore non vista (scoreDesign). Logo monocromo bianco/nero quando l'originale non si legge sul fondo.
+- Prova su 12 brand (13/11/2026): buoni Alessi, Barilla, Eataly, Kartell, Aesop, Lavazza; incerti Freitag, illy, Oatly, Patagonia; bloccati Mutti (403), Antinori (timeout).
+- Prossimo passo possibile: Browser Rendering di Cloudflare come ripiego per i siti in JavaScript o che bloccano la lettura.
