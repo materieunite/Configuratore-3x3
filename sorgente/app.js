@@ -92,7 +92,7 @@ function woodTexture(tint) {
 function _woodTexture(tint) {
   const W = 1024, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const base = tint ? mix(tint, '#b98a57', 0.35) : '#c49a68';
+  const base = tint ? mix(tint, '#b98a57', 0.18) : '#c49a68';
   g.fillStyle = base; g.fillRect(0, 0, W, H);
   // doghe orizzontali con venature
   const plank = 128;
@@ -273,7 +273,7 @@ function computeDesign(seeds = state.seeds) {
   return {
     R,
     banner: col(opt(bannerList, seeds.banner)),
-    cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null },
+    cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null, legno: opt([R.S, R.P, R.A], Math.floor(seeds.cassa / cassaList.length)) },
     alzate: { style: opt(alzStyles, seeds.alzate), bg: opt([R.S, R.P, R.A], Math.floor(seeds.alzate / alzStyles.length)), piani: opt([R.P, R.S, '#2a2a2a'], Math.floor(seeds.alzate / 2)) },
     nicchie: opt(['alterne', 'sfumate', 'una', 'duo'], seeds.nicchie),
     pareti: { style: opt(WALL_STYLES, seeds.pareti), c: wr, band: R.P },
@@ -334,10 +334,26 @@ function logoInfo(img) {
   const lums = []; let sat = 0;
   for (let i = 0; i < d.length; i += 8) { if (d[i + 3] < 100) continue; lums.push(lum(rgbToHex([d[i], d[i + 1], d[i + 2]]))); const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); sat += (mx - mn) / 255; }
   const mono = (hex) => { const o = document.createElement('canvas'); o.width = W; o.height = H; const og = o.getContext('2d'); og.drawImage(img, 0, 0); og.globalCompositeOperation = 'source-in'; og.fillStyle = hex; og.fillRect(0, 0, W, H); return o; };
-  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, white: mono('#ffffff'), black: mono('#161616') };
+  const dk = lums.filter(l => l < 0.12).length / Math.max(1, lums.length), lt = lums.filter(l => l > 0.5).length / Math.max(1, lums.length);
+  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, twoTone: dk > 0.12 && lt > 0.12, ar: W / H, white: mono('#ffffff'), black: mono('#161616') };
   _logoCache.set(img, L); return L;
 }
 function legibility(L, bg) { const b = lum(bg); if (!L.lums.length) return 0; let ok = 0; for (const l of L.lums) if (contrast(l, b) >= 3) ok++; return ok / L.lums.length; }
+// disegna il logo su un fondo garantendo la lettura:
+// originale se si legge; se monocolore lo ricoloro bianco o nero; se a due toni (es. BMW) gli metto dietro una placca
+function drawLogo(g, bg, x, y, w, h, onPhoto = false) {
+  if (!state.logo) return false;
+  const L = logoInfo(state.logo);
+  if (!onPhoto && legibility(L, bg) >= 0.7) { drawContain(g, state.logo, x, y, w, h); return true; }
+  if (!L.twoTone) { const m = onPhoto || contrast(lum(bg), 1) >= contrast(lum(bg), lum('#161616')) ? L.white : L.black; drawContain(g, m, x, y, w, h); return true; }
+  const plate = legibility(L, '#ffffff') >= legibility(L, '#161616') ? '#ffffff' : '#161616';
+  const iw = state.logo.width || state.logo.naturalWidth, ih = state.logo.height || state.logo.naturalHeight;
+  const k = Math.min(w / iw, h / ih) * 0.82, dw = iw * k, dh = ih * k, cx = x + w / 2, cy = y + h / 2, pad = Math.min(dw, dh) * 0.14;
+  g.fillStyle = plate; g.beginPath();
+  if (L.ar > 0.85 && L.ar < 1.18) g.arc(cx, cy, Math.max(dw, dh) / 2 + pad, 0, Math.PI * 2);
+  else { const rw = dw + pad * 2, rh = dh + pad * 2, r = Math.min(rw, rh) * 0.2; g.roundRect(cx - rw / 2, cy - rh / 2, rw, rh, r); }
+  g.fill(); g.drawImage(state.logo, cx - dw / 2, cy - dh / 2, dw, dh); return true;
+}
 // il logo da usare su un certo fondo: originale se si legge, altrimenti bianco o nero
 function logoOn(bg) {
   if (!state.logo) return null; const L = logoInfo(state.logo);
@@ -354,9 +370,7 @@ function render() {
   {
     const c = panelCanvas('logo_3'), g = c.getContext('2d');
     g.fillStyle = D.banner; g.fillRect(0, 0, c.width, c.height);
-    const lg = logoOn(D.banner);
-    if (lg) drawContain(g, lg, c.width * 0.08, c.height * 0.16, c.width * 0.84, c.height * 0.68);
-    else brandWord(g, c.width * 0.08, 0, c.width * 0.84, c.height, readable(D.banner));
+    if (!drawLogo(g, D.banner, c.width * 0.08, c.height * 0.16, c.width * 0.84, c.height * 0.68)) brandWord(g, c.width * 0.08, 0, c.width * 0.84, c.height, readable(D.banner));
     setPanel('logo_3', c);
   }
   // fronte cassa (logo_1)
@@ -364,9 +378,7 @@ function render() {
     const c = panelCanvas('logo_1'), g = c.getContext('2d'), bg = D.cassa.bg;
     g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
     const tagH = state.tagline ? c.height * 0.16 : 0;
-    const lg = logoOn(bg);
-    if (lg) drawContain(g, lg, c.width * 0.14, c.height * 0.14, c.width * 0.72, c.height * 0.62 - tagH * 0.3);
-    else brandWord(g, c.width * 0.1, c.height * 0.1, c.width * 0.8, c.height * 0.6, readable(bg));
+    if (!drawLogo(g, bg, c.width * 0.14, c.height * 0.14, c.width * 0.72, c.height * 0.62 - tagH * 0.3)) brandWord(g, c.width * 0.1, c.height * 0.1, c.width * 0.8, c.height * 0.6, readable(bg));
     if (state.tagline) {
       const ink = bg === '#ffffff' && contrast(lum(R.P), lum(bg)) >= 3 ? R.P : readable(bg);
       g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -388,19 +400,31 @@ function render() {
     let ink = readable(bg);
     if (style === 'foto' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H); ink = '#ffffff'; }
     g.textBaseline = 'middle'; g.textAlign = 'left';
+    const onPhoto = style === 'foto' && state.hero;
     if (style === 'blocchi') {
-      const cols = [bg, R.A === bg ? R.P : R.A];
-      for (let x = 0, i = 0; x < W; x += H * 4, i++) { const cc = cols[i % 2]; g.fillStyle = cc; g.fillRect(x, 0, H * 4, H); if (msg) { g.fillStyle = readable(cc); fitText(g, msg, H * 3.6, H * 0.4, 700); g.fillText(msg, x + H * 0.25, H / 2); } }
+      const cols = [bg, R.A === bg ? R.P : R.A], nb = Math.max(1, Math.round(W / (H * 4))), bw = W / nb;
+      for (let i = 0; i < nb; i++) { const cc = cols[i % 2]; g.fillStyle = cc; g.fillRect(i * bw, 0, bw + 1, H); if (msg) { g.fillStyle = readable(cc); g.textAlign = 'center'; fitText(g, msg, bw * 0.86, H * 0.4, 700); g.fillText(msg, i * bw + bw / 2, H / 2); } }
+      g.textAlign = 'left';
     } else if (style === 'logo' && state.logo) {
-      const lg = logoOn(bg); for (let x = H * 0.4; x < W; x += H * 2.4) drawContain(g, lg, x, H * 0.18, H * 1.8, H * 0.64);
+      const uw = H * 2.4, nl = Math.max(1, Math.floor((W - H * 0.4) / uw)), off = (W - nl * uw) / 2;
+      for (let i = 0; i < nl; i++) drawLogo(g, bg, off + i * uw + H * 0.3, H * 0.18, H * 1.8, H * 0.64);
     } else if (msg) {
-      fitText(g, msg, W * 0.55, H * 0.42, 700);
-      const step = g.measureText(msg).width + H * 1.6; let x = H * 0.5, i = 0;
-      const lg = style === 'foto' ? (state.logo ? logoInfo(state.logo).white : null) : logoOn(bg);
-      while (x < W) {
-        if (lg && i % 2 === 1) { drawContain(g, lg, x, H * 0.2, H * 1.2, H * 0.6); x += H * 1.6; }
-        else { g.fillStyle = ink; g.fillText(msg, x, H / 2); x += step; }
-        i++;
+      // sequenza testo · logo · testo … di unità intere, centrata sul pannello
+      fitText(g, msg, W * 0.42, H * 0.42, 700);
+      const tw = g.measureText(msg).width, gap = H * 0.9, lw = state.logo ? H * 1.3 : 0, units = [];
+      let used = 0;
+      for (let i = 0; ; i++) {
+        const isLogo = lw && i % 2 === 1, uw2 = isLogo ? lw : tw;
+        const need = used + (units.length ? gap : 0) + uw2;
+        if (need > W - H * 0.6) break;
+        units.push({ isLogo, w: uw2 }); used = need;
+      }
+      if (units.length && units[units.length - 1].isLogo && units.length > 1) { used -= units.pop().w + gap; }
+      let x = (W - used) / 2;
+      for (const u of units) {
+        if (u.isLogo) drawLogo(g, bg, x, H * 0.2, u.w, H * 0.6, onPhoto);
+        else { g.fillStyle = ink; g.fillText(msg, x, H / 2); }
+        x += u.w + gap;
       }
     }
     setPanel(n, c);
@@ -414,7 +438,7 @@ function render() {
   else { M.pareti.color.set(state.walls === 'tinta' ? mix(R.P, '#ffffff', 0.85) : '#ecebe6'); M.bordo.color.set(M.pareti.color); }
   M.pareti.needsUpdate = true;
   // cassa in legno (in cache) e prodotti
-  M.cassa.map = woodTexture(state.crate === 'tinta' ? R.S : null); M.cassa.needsUpdate = true;
+  M.cassa.map = woodTexture(state.crate === 'tinta' ? D.cassa.legno : null); M.cassa.needsUpdate = true;
   M.prodotti.color.set(R.A);
   model.getObjectByName('prodotti') && (model.getObjectByName('prodotti').visible = state.products);
   syncUI();
@@ -731,7 +755,7 @@ function areaSwatches(id, D) {
   const R = D.R;
   if (id === 'colori') return [R.P, R.S, R.A];
   if (id === 'banner') return [D.banner];
-  if (id === 'cassa') return [D.cassa.bg, D.cassa.stripe].filter(Boolean);
+  if (id === 'cassa') return [D.cassa.bg, D.cassa.stripe, state.crate === 'tinta' ? D.cassa.legno : null].filter(Boolean);
   if (id === 'alzate') return [D.alzate.bg, D.alzate.piani];
   if (id === 'nicchie') return D.nicchie === 'una' ? [R.A] : D.nicchie === 'duo' ? [R.P, R.S] : [R.P, R.A, R.S];
   if (id === 'pareti') return state.walls === 'stampa' ? D.pareti.c : [];
@@ -776,7 +800,8 @@ canvas.addEventListener('pointerup', (e) => {
   pop.style.left = Math.min(mr.width - 230, e.clientX - mr.left + 10) + 'px'; pop.style.top = Math.max(10, e.clientY - mr.top - 20) + 'px'; pop.hidden = false;
 });
 function syncUI() {
-  for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).value = state.colors[k];
+  const RU = state.design ? state.design.R : { P: state.colors.primary, S: state.colors.secondary, A: state.colors.accent };
+  $('#c-primary').value = RU.P; $('#c-secondary').value = RU.S; $('#c-accent').value = RU.A;
   $('#brand').value = state.brand; $('#tagline').value = state.tagline;
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
   $('#products').checked = state.products;
@@ -789,7 +814,7 @@ function syncUI() {
   const pc = $('#pal'); pc.innerHTML = '';
   for (const h of state.palette || []) {
     const b = document.createElement('button'); b.className = 'chip'; b.style.background = h; b.title = h + ' → clic: primario · Maiusc+clic: accento · Alt+clic: secondario';
-    b.onclick = (e) => { const k = e.shiftKey ? 'accent' : e.altKey ? 'secondary' : 'primary'; state.colors[k] = h; state.locks.colori = true; state.seeds.colori = 0; applyAll(); };
+    b.onclick = (e) => setRole(e.shiftKey ? 'accent' : e.altKey ? 'secondary' : 'primary', h);
     pc.append(b);
   }
   // candidates
@@ -834,7 +859,14 @@ $('#go').addEventListener('click', analyzeSite);
 $('#regen').addEventListener('click', rigeneraTutto);
 $('#prev').addEventListener('click', indietro);
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyzeSite(); });
-for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => { state.colors[k] = e.target.value; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85); state.locks.colori = true; state.seeds.colori = 0; applyAll(); });
+function setRole(k, hex) {
+  // congelo i colori attualmente in uso, poi cambio solo il ruolo scelto
+  const R = state.design ? state.design.R : null;
+  if (R) state.colors = { ...state.colors, primary: R.P, secondary: R.S, accent: R.A };
+  state.colors[k] = hex; state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85);
+  state.locks.colori = true; state.seeds.colori = 0; applyAll();
+}
+for (const k of ['primary', 'secondary', 'accent']) $('#c-' + k).addEventListener('input', (e) => setRole(k, e.target.value));
 $('#brand').addEventListener('input', (e) => { state.brand = e.target.value; applyAll(); });
 $('#tagline').addEventListener('input', (e) => { state.tagline = e.target.value; applyAll(); });
 document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { state[b.dataset.opt] = b.dataset.val; applyAll(); }));
