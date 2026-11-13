@@ -498,7 +498,7 @@ async function analyzeSite() {
   if (!WORKER) { setStatus('Servizio di lettura dei siti non configurato.'); return; }
   busy(true); state.variant = 0; setStatus('Leggo il sito…'); $('#go').disabled = true;
   try {
-    const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`);
+    const r = await fetch(`${WORKER}/brand?url=${encodeURIComponent(url)}`, { cache: 'no-cache' });
     const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
     const host = new URL(d.url).hostname;
     const ta = document.createElement('textarea'); const dec = (x) => { ta.innerHTML = x || ''; return ta.value; };
