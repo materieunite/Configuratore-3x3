@@ -7,6 +7,7 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 const MAX_HTML = 3_000_000, MAX_CSS = 1_500_000, MAX_IMG = 10_000_000;
+const VERSION = '2026-11-13.2';
 
 export default {
   async fetch(req, env, ctx) {
@@ -36,7 +37,7 @@ export default {
         const buf = await readLimited(r, MAX_IMG);
         return new Response(buf, { headers: { ...cors, 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' } });
       }
-      return json({ ok: true, uso: ['/brand?url=', '/img?u='] }, 200, cors);
+      return json({ ok: true, version: VERSION, uso: ['/brand?url=', '/img?u='] }, 200, cors);
     } catch (e) {
       return json({ error: String(e.message || e) }, e.status || 502, cors);
     }
@@ -55,16 +56,22 @@ function safeUrl(raw, env) {
   return t;
 }
 function err(m, status) { const e = new Error(m); e.status = status; return e; }
-async function get(url, accept) {
-  return fetch(url.href, { headers: { 'User-Agent': UA, 'Accept': accept, 'Accept-Language': 'it,en;q=0.8' }, redirect: 'follow', cf: { cacheTtl: 3600 } });
+async function get(url, accept, ms = 8000) {
+  try {
+    return await fetch(url.href, { headers: { 'User-Agent': UA, 'Accept': accept, 'Accept-Language': 'it,en;q=0.8' }, redirect: 'follow', cf: { cacheTtl: 3600 }, signal: AbortSignal.timeout(ms) });
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw err('il sito non risponde', 504);
+    throw err('il sito non è raggiungibile', 502);
+  }
 }
 async function readLimited(r, max) {
   const reader = r.body.getReader(); const chunks = []; let n = 0;
   for (;;) { const { done, value } = await reader.read(); if (done) break; n += value.length; if (n > max) { reader.cancel(); throw err('file troppo grande', 413); } chunks.push(value); }
   const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; } return out;
 }
-async function text(url, accept, max) {
-  const r = await get(url, accept);
+async function text(url, accept, max, ms) {
+  const r = await get(url, accept, ms);
+  if (r.status === 403 || r.status === 429) throw err('il sito blocca la lettura automatica', 502);
   if (!r.ok) throw err(`il sito ha risposto ${r.status}`, 502);
   return { body: new TextDecoder().decode(await readLimited(r, max)), finalUrl: new URL(r.url || url.href) };
 }
@@ -101,30 +108,61 @@ async function brand(target, env) {
       walk(JSON.parse(m[1]));
     } catch { }
   }
-  // immagini: loghi e foto
+  // candidati logo con punteggio + foto
   const header = (html.match(/<header[\s\S]*?<\/header>/i) || [''])[0];
-  const logos = [], photos = [];
+  const origin = finalUrl.origin;
+  const isHome = (href) => { if (!href) return false; try { const h = new URL(href, base); return h.origin === origin && (h.pathname === '/' || /^\/[a-z]{2}([-_][a-z]{2})?\/?$/i.test(h.pathname) || /^\/(home|index\.html?)\/?$/i.test(h.pathname)); } catch { return false; } };
+  const homeLinks = [...html.slice(0, 600_000).matchAll(/<a\s[^>]*>[\s\S]{0,40000}?<\/a>/gi)].map(m => m[0]).filter(a => isHome(attr(a.slice(0, a.indexOf('>') + 1), 'href'))).slice(0, 8).join('\n');
+  const ICON = /icon|menu|search|cart|bag|basket|user|account|login|close|arrow|chevron|caret|burger|gift|heart|wish|favou?rite|play|pause|social|facebook|instagram|twitter|youtube|linkedin|pinterest|tiktok|whatsapp|globe|lang|flag|star|rating|phone|mail|location|marker|share|plus|minus|filter|sort|toggle|spinner|loader|check|info|warning|payment|visa|mastercard|paypal|badge|award|trustpilot/i;
+  const LOGO = /logo|brand|wordmark|marchio|logotype/i;
+  const candidates = [];
   const seen = new Set();
+  const photos = [];
   for (const m of html.matchAll(/<img\s[^>]*>/gi)) {
     const t = m[0];
     let src = attr(t, 'src') || attr(t, 'data-src') || attr(t, 'data-lazy-src');
     const srcset = attr(t, 'srcset') || attr(t, 'data-srcset');
-    if (srcset) { const best = srcset.split(',').map(s => s.trim().split(/\s+/)).sort((a, b) => parseFloat(b[1] || 0) - parseFloat(a[1] || 0))[0]; if (best?.[0]) src = best[0]; }
-    if (!src || src.startsWith('data:image/gif')) continue;
+    if (srcset) { const best = srcset.split(',').map(x => x.trim().split(/\s+/)).sort((a, b) => parseFloat(b[1] || 0) - parseFloat(a[1] || 0))[0]; if (best?.[0]) src = best[0]; }
+    if (!src || src.startsWith('data:')) continue;
     const url = abs(src, base); if (!url || seen.has(url)) continue; seen.add(url);
-    const hint = [attr(t, 'alt'), attr(t, 'class'), attr(t, 'id'), src].join(' ').toLowerCase();
-    const inHeader = header.includes(m[0]);
-    if (/logo|brand|marchio/.test(hint) || (inHeader && logos.length < 2)) logos.push({ url, alt: attr(t, 'alt'), inHeader });
-    else if (photos.length < 12 && !/icon|sprite|pixel|tracking|avatar|flag|payment/.test(hint)) photos.push({ url, alt: attr(t, 'alt'), w: +attr(t, 'width') || null, h: +attr(t, 'height') || null });
+    const hint = [attr(t, 'alt'), attr(t, 'class'), attr(t, 'id'), attr(t, 'title'), src.split('?')[0]].join(' ');
+    const inHeader = header.includes(t), inHome = homeLinks.includes(t);
+    const w = +attr(t, 'width') || 0, h = +attr(t, 'height') || 0;
+    let score = 0;
+    if (LOGO.test(hint)) score += 60;
+    if (inHome) score += 50;
+    if (inHeader) score += 10;
+    if (ICON.test(hint) && !LOGO.test(hint)) score -= 80;
+    if (/\.svg(\?|$)/i.test(src)) score += 10;
+    if (w && h && Math.max(w, h) <= 48) score -= 60;
+    if (score >= 40) candidates.push({ type: 'img', url, alt: attr(t, 'alt'), score });
+    else if (photos.length < 12 && !ICON.test(hint) && !(w && h && Math.max(w, h) < 200)) photos.push({ url, alt: attr(t, 'alt'), w: w || null, h: h || null });
   }
-  // SVG in linea con aria/classe logo o nell'header
-  const svgs = [];
   for (const m of html.matchAll(/<svg[\s\S]*?<\/svg>/gi)) {
-    const s = m[0]; if (s.length > 80_000 || s.length < 200) continue;
-    const open = s.slice(0, 400).toLowerCase();
-    const inHeader = header.includes(s);
-    if (/logo|brand/.test(open) || (inHeader && svgs.length < 2)) { svgs.push(normalizeSvg(s)); if (svgs.length >= 4) break; }
+    const sv = m[0]; if (sv.length > 120_000 || sv.length < 150) continue;
+    const open = sv.slice(0, sv.indexOf('>') + 1);
+    const title = (sv.match(/<title[^>]*>([^<]*)</i) || [])[1] || '';
+    const hint = open + ' ' + title;
+    const inHeader = header.includes(sv), inHome = homeLinks.includes(sv);
+    const vb = (attr(open, 'viewBox') || attr(open, 'viewbox') || '').trim().split(/[\s,]+/).map(Number);
+    let w = vb.length === 4 ? vb[2] : +attr(open, 'width') || 0, h = vb.length === 4 ? vb[3] : +attr(open, 'height') || 0;
+    const ar = w && h ? w / h : 0;
+    let score = 0;
+    if (LOGO.test(hint)) score += 60;
+    if (inHome) score += 50;
+    if (inHeader) score += 10;
+    if (ICON.test(hint) && !LOGO.test(hint)) score -= 80;
+    if (w && h && Math.max(w, h) <= 48 && ar > 0.6 && ar < 1.6) score -= 60;
+    if (ar >= 1.8) score += 15;
+    if (sv.length > 1500) score += 10; else if (sv.length < 500) score -= 20;
+    if (/<use\s/i.test(sv) && sv.length < 800) score -= 60; // riferimento a sprite, vuoto da solo
+    if (score >= 40) candidates.push({ type: 'svg', svg: normalizeSvg(sv), score, w, h });
   }
+  if (ldLogo) candidates.push({ type: 'img', url: ldLogo, alt: 'logo (dati strutturati)', score: 55 });
+  const dedup = new Set();
+  const logos = candidates.filter(c => { const k = c.url || c.svg; if (dedup.has(k)) return false; dedup.add(k); return true; }).sort((a, b) => b.score - a.score).slice(0, 6);
+  const svgs = logos.filter(c => c.type === 'svg').map(c => c.svg);
+  const logoImgs = logos.filter(c => c.type === 'img').map(c => ({ url: c.url, alt: c.alt }));
   // fogli di stile: colori e font
   const cssTexts = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]);
   const inlineStyles = [...html.matchAll(/\sstyle\s*=\s*"([^"]*)"/gi)].map(m => m[1]).join(';');
@@ -133,7 +171,7 @@ async function brand(target, env) {
   const googleFonts = [];
   for (const s of sheetUrls) if (/fonts\.googleapis\.com/.test(s)) { for (const f of new URL(s).searchParams.getAll('family')) googleFonts.push(f.split(':')[0].replace(/\+/g, ' ')); }
   const own = sheetUrls.filter(s => !/fonts\.googleapis|use\.typekit|cdnjs|jsdelivr|unpkg|bootstrapcdn|fontawesome/.test(s)).slice(0, 5);
-  const fetched = await Promise.allSettled(own.map(s => text(new URL(s), 'text/css,*/*;q=0.1', MAX_CSS)));
+  const fetched = await Promise.allSettled(own.map(s => text(new URL(s), 'text/css,*/*;q=0.1', MAX_CSS, 5000)));
   for (const f of fetched) if (f.status === 'fulfilled') cssTexts.push(f.value.body);
   const css = cssTexts.join('\n');
   const { colors, vars } = cssColors(css);
@@ -147,7 +185,9 @@ async function brand(target, env) {
     title, description: meta('og:description') || meta('description'),
     themeColor: meta('theme-color') || meta('msapplication-tilecolor'),
     lang: (html.match(/<html[^>]*\slang=["']?([a-z-]+)/i) || [])[1] || null,
-    logo: { jsonLd: ldLogo, img: logos.slice(0, 6), svg: svgs, icons },
+    version: VERSION,
+    logos,
+    logo: { jsonLd: ldLogo, img: logoImgs, svg: svgs, icons },
     images: { og: ogImage ? abs(ogImage, base) : null, photos },
     colors, cssVars: vars,
     fonts: { google: [...new Set(googleFonts)].slice(0, 4), css: fonts },
@@ -159,6 +199,7 @@ function cleanTitle(t, host) {
   return parts.sort((a, b) => a.length - b.length)[0] || t;
 }
 function normalizeSvg(s) {
+  s = s.replace(/\sviewbox=/i, ' viewBox=').replace(/\spreserveaspectratio=/i, ' preserveAspectRatio=');
   if (!/xmlns=/.test(s)) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
   return s.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+="[^"]*"/gi, '');
 }
@@ -187,7 +228,7 @@ function cssFonts(css) {
   const c = new Map();
   for (const m of css.matchAll(/font-family\s*:\s*([^;}{]+)/gi)) {
     const f = m[1].split(',')[0].trim().replace(/^["']|["']$/g, '');
-    if (!f || /^(var\(|inherit|initial|sans-serif|serif|monospace|system-ui|-apple-system|font\s*awesome|icon|dashicons|slick|swiper)/i.test(f)) continue;
+    if (!f || /[:(){}]/.test(f) || /^(var|inherit|initial|unset|sans-serif|serif|monospace|system-ui|-apple-system|blinkmacsystemfont|arial|helvetica|times)/i.test(f) || /icon|awesome|videojs|vjs|swiper|slick|dashicons|glyph|icomoon|material|eicons|feather|fa-|fontello|star|social|revicons|woocommerce|elementor/i.test(f)) continue;
     c.set(f, (c.get(f) || 0) + 1);
   }
   return [...c.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
