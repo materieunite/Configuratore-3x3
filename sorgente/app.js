@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import * as pdfjs from 'pdfjs-dist/build/pdf.min.mjs';
-import JSZip from 'jszip';
-
-pdfjs.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+// lettore PDF e ZIP: scaricati solo quando si trascina un press kit
+let pdfjs = null;
+async function loadPdfjs() { if (!pdfjs) { pdfjs = await import('pdfjs-dist/build/pdf.min.mjs'); pdfjs.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'; } return pdfjs; }
 
 const PANELS = window.PANELS; // dimensioni reali dei pannelli (m)
 const $ = (s) => document.querySelector(s);
@@ -135,7 +135,7 @@ M.sgabelli_legno.map = woodTexture('#dcc49c'); // compensato di betulla, non cam
 
 // ---------------- caricamento modello ----------------
 let model;
-new GLTFLoader().load('./stand.glb', (gltf) => {
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('./stand.glb', (gltf) => {
   model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
@@ -671,7 +671,7 @@ function cutLogo(c, r, bg) {
 }
 function coverOk(c) { const s = 64, t = document.createElement('canvas'); t.width = t.height = s; const g = t.getContext('2d'); g.drawImage(c, 0, 0, s, s); const d = g.getImageData(0, 0, s, s).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++; const f = n / (s * s); return f > 0.06 && f < 0.55; }
 async function ingestPdf(buf, name) {
-  const doc = await pdfjs.getDocument({ data: buf }).promise;
+  await loadPdfjs(); const doc = await pdfjs.getDocument({ data: buf }).promise;
   let title = ''; try { title = ((await doc.getMetadata()).info || {}).Title || ''; } catch { }
   const T0 = performance.now(); const N = Math.min(doc.numPages, 120), texts = [];
   for (let p = 1; p <= N; p++) { if (p % 10 === 1) setStatus(`Leggo il PDF… testo ${p}/${N}`); const tc = await (await doc.getPage(p)).getTextContent(); texts.push(tc.items.map(i => i.str).join(' ')); }
@@ -729,7 +729,7 @@ async function ingestPdf(buf, name) {
 async function ingestFile(file) {
   const name = file.name, low = name.toLowerCase();
   if (low.endsWith('.zip')) {
-    const zip = await JSZip.loadAsync(file);
+    const { default: JSZip } = await import('jszip'); const zip = await JSZip.loadAsync(file);
     for (const [path, entry] of Object.entries(zip.files)) {
       if (entry.dir || path.includes('__MACOSX')) continue;
       const l = path.toLowerCase();
@@ -912,45 +912,6 @@ async function loadGoogleFont(fam) {
   } catch { }
 }
 
-// ---------------- AI (capability sample) ----------------
-let sample = null;
-(async () => { try { sample = await window.claude?.use?.('sample'); } catch { sample = null; } $('#ai-row').hidden = !sample; })();
-
-function thumbBlob(img, max = 768) {
-  const s = Math.min(1, max / Math.max(img.width || img.naturalWidth, img.height || img.naturalHeight));
-  const c = document.createElement('canvas'); c.width = (img.width || img.naturalWidth) * s; c.height = (img.height || img.naturalHeight) * s;
-  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
-  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
-}
-async function aiDirect() {
-  if (!sample) return;
-  setStatus('Claude sta leggendo il brand…');
-  const url = $('#url').value.trim();
-  const imgs = [];
-  try { const lim = await sample.limits?.(); if (lim?.images) for (const c of state.candidates.slice(0, 4)) imgs.push(await thumbBlob(c.img)); } catch { }
-  const prompt = `Sei un art director di allestimenti fieristici. Devi personalizzare uno stand in cartone di 3x3 m (banner in alto 1,6x0,4 m, pannello sul fronte di una cassa in legno, due alzate laterali lunghe 2,4 m e alte 0,24 m, 9 nicchie colorate).
-Dati del brand:
-- sito indicato: ${url || 'nessuno'}
-- testo estratto dal press kit: ${pdfText.slice(0, 6000) || 'nessuno'}
-- palette estratta dalle immagini: ${(state.palette || []).join(', ') || 'nessuna'}
-${imgs.length ? '- in allegato le immagini del press kit (loghi o pagine).' : ''}
-Regole: usa solo informazioni che ricavi dai dati forniti. Se hai soltanto un indirizzo web senza altro materiale e non conosci con certezza l'identità visiva del brand, metti "confidence":"bassa" e lascia i colori a null. Non inventare.
-Rispondi SOLO con JSON: {"brand":string|null,"tagline":string|null (max 6 parole, nella lingua del brand),"primary":"#hex"|null,"secondary":"#hex"|null,"accent":"#hex"|null,"bannerBg":"primary"|"bianco","walls":"bianco"|"tinta","crate":"naturale"|"tinta","confidence":"alta"|"media"|"bassa","note":string (una frase in italiano)}`;
-  try {
-    const res = await sample.json(prompt, imgs.length ? { images: imgs } : {});
-    if (res.brand) state.brand = res.brand;
-    if (res.tagline) state.tagline = res.tagline;
-    for (const k of ['primary', 'secondary', 'accent']) if (/^#[0-9a-f]{6}$/i.test(res[k] || '')) state.colors[k] = res[k].toLowerCase();
-    state.colors.neutral = mix(state.colors.primary, '#ffffff', 0.85);
-    if (res.bannerBg) state.bannerBg = res.bannerBg;
-    if (res.walls) state.walls = res.walls;
-    if (res.crate) state.crate = res.crate;
-    applyAll();
-    setStatus(`Proposta di Claude (affidabilità ${res.confidence || '—'}). ${res.note || ''}`);
-  } catch (e) {
-    setStatus(e?.code === 'not_granted' ? 'Accesso a Claude non concesso: proposta automatica non disponibile.' : 'Claude non ha risposto, riprova tra poco.');
-  }
-}
 
 function useLogo(cd) {
   if (!cd) return; state.logo = knockoutWhite(cd.img); state.logoFrom = cd;
@@ -1078,13 +1039,12 @@ async function handleFiles(files) {
   loadFavs();
   if (!state.brand) { const guess = files[0].name.replace(/\.(zip|pdf|png|jpe?g|svg|webp)$/i, '').replace(/[-_]+/g, ' ').replace(/press ?kit|brand ?book|logo/ig, '').trim(); if (guess) state.brand = guess.replace(/\b\w/g, m => m.toUpperCase()); }
   applyAll();
-  setStatus(`${state.candidates.length} immagini trovate. Controlla logo e colori${sample ? ', oppure chiedi una proposta a Claude' : ''}.`);
+  setStatus(`${state.candidates.length} immagini trovate. Controlla logo e colori.`);
 }
 $('#url').addEventListener('change', () => {
   const u = $('#url').value.trim(); if (!u) return;
   try { const host = new URL(u.startsWith('http') ? u : 'https://' + u).hostname.replace(/^www\./, ''); if (!state.brand) { state.brand = host.split('.')[0].replace(/\b\w/g, m => m.toUpperCase()); applyAll(); } } catch { }
 });
-$('#ai').addEventListener('click', aiDirect);
 $('#up-logo').addEventListener('change', (e) => { addLogoFiles([...e.target.files]); e.target.value = ''; });
 $('#up-foto').addEventListener('change', (e) => { addPhotoFiles([...e.target.files]); e.target.value = ''; });
 $('#go').addEventListener('click', analyzeSite);

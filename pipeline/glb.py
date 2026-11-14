@@ -74,14 +74,14 @@ for k,lst in order.items():
             tb=t.submesh([np.where(~front)[0]],append=True); tb.visual=trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(name="bordo",baseColorFactor=[1,1,1,1],roughnessFactor=0.95,metallicFactor=0))
             scene.add_geometry(tb,node_name=name+"_bordo",geom_name=name+"_bordo")
 gname={"Stand::Pareti cartone":"pareti","Stand::Cassa legno":"cassa","Stand::Cassa legno::Ruote":"ruote","Stand::Sgabelli::cartone":"sgabelli_cartone","Stand::Sgabelli::legno":"sgabelli_legno","Stand::Sgabelli::metallo":"sgabelli_metallo","Riferimenti::Prodotti":"prodotti"}
-target={"sgabelli_cartone":36000,"sgabelli_legno":20000,"sgabelli_metallo":3000,"ruote":4000}
+target={"sgabelli_cartone":24000,"sgabelli_legno":12000,"sgabelli_metallo":2500,"ruote":3000}
 for L,lst in groups.items():
     nm=gname[L]
     if nm in target:
         tot=sum(len(x.faces) for x in lst); ratio=min(1,target[nm]/tot); out=[]
         for x in lst:
             x=trimesh.Trimesh(x.vertices,x.faces,process=True)  # merge vertici per oggetto
-            if len(x.faces)>400 and ratio<1:
+            if len(x.faces)>120 and ratio<1:
                 v,f=fs.simplify(x.vertices.astype(np.float32),x.faces.astype(np.int32),target_reduction=1-ratio)
                 x=trimesh.Trimesh(v,f,process=True)
             x.fix_normals(); out.append(x)
