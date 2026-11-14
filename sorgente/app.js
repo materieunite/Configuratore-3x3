@@ -230,7 +230,7 @@ const AREAS = [
   { id: 'pareti', nome: 'Pareti stampate', regen: true },
 ];
 // motivi pensati per i pannelli a zig-zag: campiture orizzontali, sfumature verticali, niente diagonali
-const WALL_STYLES = ['sfumatura', 'rigato', 'zoccolo', 'sfumatura3', 'fasce', 'orizzontale', 'tinta'];
+const WALL_STYLES = ['sfumatura', 'tinta', 'zoccolo', 'rigato'];
 state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 };
 state.locks = { colori: false, logo: false, banner: false, cassa: false, alzate: false, nicchie: false, pareti: false };
 state.history = []; state.seen = new Set();
@@ -270,7 +270,8 @@ function computeDesign(seeds = state.seeds) {
   const col = (k) => k === 'bianco' ? '#ffffff' : k === 'scuro' ? mix(R.P, '#000000', 0.55) : R[k];
   const bannerList = colorful ? ['bianco', 'P', 'S', 'scuro', 'A'] : ['P', 'bianco', 'scuro', 'S', 'A'];
   const cassaList = [['bianco', 'A'], ['P', 'A'], ['bianco', 'P'], ['S', 'P'], ['bianco', null]];
-  const alzStyles = state.hero ? ['foto', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
+  const nPh = (state.photos || []).length;
+  const alzStyles = nPh >= 2 ? ['galleria', 'foto', 'testo', 'logo', 'blocchi'] : state.hero ? ['foto', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
   const [cBg, cStripe] = opt(cassaList, seeds.cassa);
   const r = rng(seeds.pareti * 13 + 1), rolesW = [R.P, R.S, R.A];
   const wr = seeds.pareti === 0 ? rolesW : [...rolesW].sort(() => r() - 0.5);
@@ -278,7 +279,7 @@ function computeDesign(seeds = state.seeds) {
     R,
     banner: col(opt(bannerList, seeds.banner)),
     cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null, legno: opt([R.S, R.P, R.A], Math.floor(seeds.cassa / cassaList.length)) },
-    alzate: { style: opt(alzStyles, seeds.alzate), bg: opt([R.S, R.P, R.A], Math.floor(seeds.alzate / alzStyles.length)), piani: opt([R.P, R.S, '#2a2a2a'], Math.floor(seeds.alzate / 2)) },
+    alzate: { foto: seeds.alzate, style: opt(alzStyles, seeds.alzate), bg: opt([R.S, R.P, R.A], Math.floor(seeds.alzate / alzStyles.length)), piani: opt([R.P, R.S, '#2a2a2a'], Math.floor(seeds.alzate / 2)) },
     nicchie: opt(['alterne', 'sfumate', 'una', 'duo'], seeds.nicchie),
     pareti: { style: opt(WALL_STYLES, seeds.pareti), c: wr, band: R.P },
   };
@@ -343,7 +344,11 @@ function logoInfo(img) {
   const bins = new Map(); let nOp = 0;
   for (let i = 0; i < d.length; i += 8) { if (d[i + 3] < 100) continue; nOp++; const k2 = (d[i] >> 5) << 6 | (d[i + 1] >> 5) << 3 | (d[i + 2] >> 5); bins.set(k2, (bins.get(k2) || 0) + 1); }
   const top = Math.max(0, ...bins.values()) / Math.max(1, nOp);
-  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, twoTone: dk > 0.12 && lt > 0.12, monoOk: top >= 0.8, ar: W / H, white: mono('#ffffff'), black: mono('#161616') };
+  // bollino: logo che riempie quasi tutto il suo riquadro (ha già un fondo proprio, es. De Cecco)
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0, op = 0;
+  for (let yy = 0; yy < c.height; yy++) for (let xx = 0; xx < c.width; xx++) if (d[(yy * c.width + xx) * 4 + 3] > 100) { op++; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; }
+  const fillRatio = op / Math.max(1, (x1 - x0 + 1) * (y1 - y0 + 1));
+  L = { lums, colorful: lums.length ? sat / lums.length > 0.25 : false, twoTone: dk > 0.12 && lt > 0.12, monoOk: top >= 0.8, badge: fillRatio > 0.72, ar: W / H, white: mono('#ffffff'), black: mono('#161616') };
   _logoCache.set(img, L); return L;
 }
 function legibility(L, bg) { const b = lum(bg); if (!L.lums.length) return 0; let ok = 0; for (const l of L.lums) if (contrast(l, b) >= 3) ok++; return ok / L.lums.length; }
@@ -352,7 +357,7 @@ function legibility(L, bg) { const b = lum(bg); if (!L.lums.length) return 0; le
 function drawLogo(g, bg, x, y, w, h, onPhoto = false) {
   if (!state.logo) return false;
   const L = logoInfo(state.logo);
-  if (!onPhoto && legibility(L, bg) >= 0.7) { drawContain(g, state.logo, x, y, w, h); return true; }
+  if (L.badge || (!onPhoto && legibility(L, bg) >= 0.7)) { drawContain(g, state.logo, x, y, w, h); return true; }
   if (L.monoOk && !L.twoTone) { const m = onPhoto || contrast(lum(bg), 1) >= contrast(lum(bg), lum('#161616')) ? L.white : L.black; drawContain(g, m, x, y, w, h); return true; }
   // placca chiara o scura, quella su cui il logo originale si legge meglio e che si stacca dal fondo
   const plate = legibility(L, '#ffffff') + (contrast(lum(bg), 1) > 1.4 ? 0.15 : 0) >= legibility(L, '#161616') ? '#ffffff' : '#161616';
@@ -408,6 +413,19 @@ function render() {
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
     let ink = readable(bg);
     if (style === 'foto' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H); ink = '#ffffff'; }
+    if (style === 'galleria') {
+      // riquadro col logo nel colore del brand + sequenza di foto del sito; ogni ↻ cambia l'ordine delle foto
+      const ph = state.photos, side = n === 'banco_4' ? 1 : 0, gap = Math.round(H * 0.06), logoW = Math.round(H * 2.2);
+      const cells = Math.max(2, Math.min(4, Math.floor((W - logoW) / (H * 1.6))));
+      const cw = (W - logoW - gap * cells) / cells;
+      g.fillStyle = bg; g.fillRect(0, 0, W, H);
+      drawLogo(g, bg, H * 0.25, H * 0.15, logoW - H * 0.5, H * 0.7) || brandWord(g, 0, 0, logoW, H, readable(bg));
+      for (let i = 0; i < cells; i++) {
+        const img = ph[(D.alzate.foto + side * cells + i) % ph.length], x = logoW + gap + i * (cw + gap);
+        g.save(); g.beginPath(); g.rect(x, 0, cw, H); g.clip(); g.translate(x, 0); drawCover(g, img, cw, H); g.restore();
+      }
+      setPanel(n, c); continue;
+    }
     g.textBaseline = 'middle'; g.textAlign = 'left';
     const onPhoto = style === 'foto' && state.hero;
     if (style === 'blocchi') {
@@ -680,6 +698,7 @@ async function analyzeSite() {
     const photos = state.candidates.filter(c => c.src === 'sito' && c.kind === 'immagine' && (c.img.width || c.img.naturalWidth) >= 400)
       .sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height));
     state.hero = photos[0] ? photos[0].img : null; state.heroFrom = photos[0] || null;
+    state.photos = photos.slice(0, 8).map(c => c.img);
     // colori: prima il logo, poi theme-color e CSS senza i colori dei framework
     const cssCols = brandColors(d).filter(h => !FRAMEWORK_COLORS.has(h));
     const logoCols = state.logo ? extractPalette([state.logo]) : [];
@@ -859,6 +878,7 @@ async function handleFiles(files) {
   setStatus('Leggo il press kit…');
   for (const f of files) { try { await ingestFile(f); } catch (err) { console.error(err); setStatus('Non riesco a leggere ' + f.name); } }
   autoPick(); state.logoList = state.candidates.filter(c => c.kind === 'logo' || c.kind === 'immagine'); resetDesign();
+  state.photos = state.candidates.filter(c => c.kind === 'immagine' && c !== state.logoFrom && (c.img.width || c.img.naturalWidth) >= 400).map(c => c.img);
   if (!state.brand) { const guess = files[0].name.replace(/\.(zip|pdf|png|jpe?g|svg|webp)$/i, '').replace(/[-_]+/g, ' ').replace(/press ?kit|brand ?book|logo/ig, '').trim(); if (guess) state.brand = guess.replace(/\b\w/g, m => m.toUpperCase()); }
   applyAll();
   setStatus(`${state.candidates.length} immagini trovate. Controlla logo e colori${sample ? ', oppure chiedi una proposta a Claude' : ''}.`);
@@ -904,6 +924,7 @@ document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click',
 $('#products').addEventListener('change', (e) => { state.products = e.target.checked; applyAll(); });
 $('#reset').addEventListener('click', () => {
   resetDesign(); state.locks = Object.fromEntries(Object.keys(state.locks).map(k => [k, false])); state.logoList = [];
+  state.photos = [];
   Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
   state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
 });
