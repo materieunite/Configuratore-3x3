@@ -27,6 +27,9 @@ for o in m.Objects:
     if L=="Riferimenti::Figura umana": continue
     t=tm(o.Geometry)
     if t is None: continue
+    if L=="Stand::Sgabelli":
+        b=o.Geometry.GetBoundingBox(); d=sorted([b.Max.X-b.Min.X,b.Max.Y-b.Min.Y,b.Max.Z-b.Min.Z])
+        L+= "::metallo" if d[2]<30 else "::cartone" if abs(d[0]-13.5)<0.6 else "::legno"
     if L in custom: singles.append((custom[L],t))
     else: groups[L].append(t)
 scene=trimesh.Scene(); info={}
@@ -70,8 +73,8 @@ for k,lst in order.items():
         if (~front).any():
             tb=t.submesh([np.where(~front)[0]],append=True); tb.visual=trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(name="bordo",baseColorFactor=[1,1,1,1],roughnessFactor=0.95,metallicFactor=0))
             scene.add_geometry(tb,node_name=name+"_bordo",geom_name=name+"_bordo")
-gname={"Stand::Pareti cartone":"pareti","Stand::Cassa legno":"cassa","Stand::Cassa legno::Ruote":"ruote","Stand::Sgabelli":"sgabelli","Riferimenti::Prodotti":"prodotti"}
-target={"sgabelli":60000,"ruote":4000}
+gname={"Stand::Pareti cartone":"pareti","Stand::Cassa legno":"cassa","Stand::Cassa legno::Ruote":"ruote","Stand::Sgabelli::cartone":"sgabelli_cartone","Stand::Sgabelli::legno":"sgabelli_legno","Stand::Sgabelli::metallo":"sgabelli_metallo","Riferimenti::Prodotti":"prodotti"}
+target={"sgabelli_cartone":36000,"sgabelli_legno":20000,"sgabelli_metallo":3000,"ruote":4000}
 for L,lst in groups.items():
     nm=gname[L]
     if nm in target:
@@ -84,8 +87,8 @@ for L,lst in groups.items():
             x.fix_normals(); out.append(x)
         lst=out
     t=trimesh.util.concatenate(lst)
-    if nm=="cassa":  # world-planar UV for wood grain
-        P=t.vertices; uv=np.c_[P[:,0]+P[:,2],P[:,1]]*1.0
+    if nm in ("cassa","sgabelli_legno","sgabelli_cartone"):  # UV planari nel mondo: venatura / onda del cartone
+        P=t.vertices; uv=np.c_[P[:,0]+P[:,2],P[:,1]]*1.0 if nm!="sgabelli_cartone" else np.c_[P[:,0],P[:,1]-P[:,2]]
         t.visual=trimesh.visual.TextureVisuals(uv=uv,material=trimesh.visual.material.PBRMaterial(name=nm,baseColorFactor=[1,1,1,1],roughnessFactor=0.8,metallicFactor=0))
     else:
         t.visual=trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(name=nm,baseColorFactor=[1,1,1,1],roughnessFactor=0.95,metallicFactor=0))

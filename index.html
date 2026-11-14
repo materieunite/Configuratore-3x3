@@ -54,7 +54,7 @@ details#cands-wrap summary{cursor:pointer;list-style:none}details#cands-wrap sum
 #ideas{display:flex;flex-wrap:wrap;gap:6px}#ideas:empty{display:none}
 .idea{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font:500 12px "DM Sans",system-ui,sans-serif;cursor:pointer;color:var(--ink)}.idea.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
 .regen{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:10px;padding:4px 4px 4px 6px}
-.regen #prev{border:0;background:transparent;font-size:20px;line-height:1;padding:2px 6px;cursor:pointer;color:var(--ink)}.regen #prev:disabled{opacity:.25;cursor:default}
+.regen #prev,.regen #next{border:0;background:transparent;font-size:20px;line-height:1;padding:2px 6px;cursor:pointer;color:var(--ink)}.regen #prev:disabled,.regen #next:disabled{opacity:.25;cursor:default}
 .regen #vn{font:500 12px "IBM Plex Mono",ui-monospace,monospace;color:var(--mute);min-width:78px;text-align:center}
 #areas{display:grid;gap:6px}
 .area{display:grid;grid-template-columns:104px 1fr 30px 30px;gap:6px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 6px 6px 10px;font-size:12.5px}
@@ -141,7 +141,7 @@ aside{position:relative}
   <div id="pop" hidden></div>
   <div id="favs" hidden></div>
   <div class="views"><button data-view="iso">Vista</button><button data-view="front">Fronte</button><button data-view="side">Lato</button><button data-view="top">Pianta</button></div>
-  <div class="tr"><div class="regen"><button id="prev" title="Variante precedente">‹</button><span id="vn">Proposta</span><button id="regen" class="btn">Rigenera ↻</button><button id="fav" title="Aggiungi ai preferiti">♡</button></div><button class="btn ghost" id="shot" hidden style="background:#fff">Salva immagine</button></div>
+  <div class="tr"><div class="regen"><button id="prev" title="Variante precedente">‹</button><span id="vn">Proposta</span><button id="next" title="Variante successiva">›</button><button id="regen" class="btn">Rigenera ↻</button><button id="fav" title="Aggiungi ai preferiti">♡</button></div><button class="btn ghost" id="shot" hidden style="background:#fff">Salva immagine</button></div>
 </main>
 </div>
 <script src="./config.js"></script>

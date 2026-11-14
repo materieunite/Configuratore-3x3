@@ -76,7 +76,9 @@ const bump = noiseTex();
 const M = {
   pareti: new THREE.MeshStandardMaterial({ color: '#ecebe6', roughness: 0.92, bumpMap: bump, bumpScale: 0.4 }),
   bordo: new THREE.MeshStandardMaterial({ color: '#e9e7e1', roughness: 0.95 }),
-  sgabelli: new THREE.MeshStandardMaterial({ color: '#e6e3dc', roughness: 0.9 }),
+  sgabelli_cartone: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }),
+  sgabelli_legno: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 }),
+  sgabelli_metallo: new THREE.MeshStandardMaterial({ color: '#b9b9b6', roughness: 0.35, metalness: 0.7 }),
   ruote: new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.6 }),
   cassa: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.75 }),
   prodotti: new THREE.MeshStandardMaterial({ color: '#cccccc', roughness: 0.5 }),
@@ -113,6 +115,23 @@ function _woodTexture(tint) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1.2, 1.2); t.anisotropy = 8;
   return t;
 }
+
+// cartone ondulato visto di taglio: strati da 13,5 mm, onde sottili
+function cartoneTexture() {
+  const W = 256, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#9c7a52'; g.fillRect(0, 0, W, H);
+  const rows = 8, rh = H / rows;
+  for (let r = 0; r < rows; r++) {
+    const y0 = r * rh; g.fillStyle = '#6f5235'; g.fillRect(0, y0, W, 2.2);
+    g.strokeStyle = '#5e4429'; g.lineWidth = 2; g.beginPath();
+    for (let x = 0; x <= W; x += 2) { const y = y0 + rh / 2 + Math.sin((x / W) * Math.PI * 2 * 6 + r * 1.7) * (rh * 0.36); x ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(60,40,20,0.45)'; g.fillRect(0, 0, 3, H); // giunto tra due fogli
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 0.0135, 1 / 0.024); t.anisotropy = 8; return t;
+}
+M.sgabelli_cartone.map = cartoneTexture();
+M.sgabelli_legno.map = woodTexture('#dcc49c'); // compensato di betulla, non cambia con le varianti
 
 // ---------------- caricamento modello ----------------
 let model;
@@ -305,7 +324,7 @@ function scoreDesign(D) {
 }
 const sig = (seeds) => AREAS.map(a => a.id + seeds[a.id]).join('|');
 function rigeneraTutto() {
-  state.history.push({ ...state.seeds }); state.seen.add(sig(state.seeds));
+  pushHist(); state.seen.add(sig(state.seeds));
   let best = null, bestS = -1e9;
   for (let i = 0; i < 24; i++) {
     const s2 = { ...state.seeds };
@@ -319,7 +338,7 @@ function rigeneraTutto() {
 }
 function rigeneraArea(id) {
   if (id === 'logo') { const n = (state.logoList || []).length; if (n > 1) { state.seeds.logo = (state.seeds.logo + 1) % n; useLogo(state.logoList[state.seeds.logo]); } return; }
-  state.history.push({ ...state.seeds });
+  pushHist();
   let best = null, bestS = -1e9; const cur = JSON.stringify(computeDesign()[id === 'colori' ? 'R' : id]);
   for (let i = 0; i < 12; i++) {
     const s2 = { ...state.seeds, [id]: 1 + Math.floor(Math.random() * 997) };
@@ -347,7 +366,7 @@ function toggleFav() {
   saveFavs(); syncUI();
 }
 function openFav(f) {
-  state.history.push({ ...state.seeds });
+  pushHist();
   state.seeds = { ...f.seeds }; state.colors = { ...state.colors, primary: f.R.P, secondary: f.R.S, accent: f.R.A }; state.locks.colori = true; state.seeds.colori = 0;
   state.walls = f.walls; state.crate = f.crate; if (f.tagline !== undefined) state.tagline = f.tagline;
   if (f.logo >= 0 && state.logoList && state.logoList[f.logo]) useLogo(state.logoList[f.logo]);
@@ -362,8 +381,11 @@ function renderFavs() {
   });
   const h = $('#fav'); if (h) { const on = isFav() >= 0; h.textContent = on ? '♥' : '♡'; h.classList.toggle('on', on); }
 }
-function indietro() { const p = state.history.pop(); if (p) { state.seeds = p; applyAll(); } }
-function resetDesign() { state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 }; state.history = []; state.seen = new Set(); }
+state.future = [];
+function pushHist() { state.history.push({ ...state.seeds }); state.future = []; }
+function indietro() { const p = state.history.pop(); if (p) { state.future.push({ ...state.seeds }); state.seeds = p; applyAll(); } }
+function avanti() { const p = state.future.pop(); if (p) { state.history.push({ ...state.seeds }); state.seeds = p; applyAll(); } }
+function resetDesign() { state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 }; state.history = []; state.future = []; state.seen = new Set(); }
 
 // ---------------- leggibilità del logo ----------------
 // campiono i pixel opachi del logo: luminanza e saturazione; versioni monocrome per i fondi difficili
@@ -580,18 +602,129 @@ async function blobToImg(blob, name = '') {
   }
   return img;
 }
-let pdfText = '';
+let pdfText = '', pdfInfo = { name: '', tagline: '', hex: [] };
+// Manuali e press kit in PDF: il logo è quasi sempre vettoriale, non un'immagine. Lo ritaglio dalle pagine renderizzate:
+// tolgo i testi, cerco le macchie d'inchiostro compatte, monocromatiche e larghe, e le scontorno dal fondo.
+const GENERIC = /^(corporate|design|manual|manuale|brand|book|brandbook|guidelines?|guida|linee|identity|identit[aà]|visual|press|kit|cd|ci|logo|logos|marchio|version[ei]?|v\d+|rev|final[ei]?|it|en|de|fr|es|ita|eng|deu|the|of|and|di|del|della|il|la|e|\d{2,4})$/i;
+function pdfName(file, title, text) {
+  const words = [...new Set(`${file} ${title}`.replace(/\.(pdf|zip)$/i, '').split(/[\s_\-.()]+/).filter(w => w.length > 2 && !GENERIC.test(w)))];
+  const cnt = (w) => (text.match(new RegExp('\\b' + w.replace(/[^\w]/g, '') + '\\b', 'gi')) || []).length;
+  const best = words.map(w => [w, cnt(w)]).sort((a, b) => b[1] - a[1])[0];
+  if (best && best[1] >= 2) return best[0].charAt(0).toUpperCase() + best[0].slice(1);
+  return words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1) : '';
+}
+function pdfHexes(pages) {
+  const all = [], colorPages = pages.filter(t => /colou?r|colori|farben|couleurs|palette/i.test(t));
+  for (const t of [...colorPages, ...pages]) {
+    for (const m of t.matchAll(/#\s?([0-9a-f]{6})\b/gi)) all.push('#' + m[1].toLowerCase());
+    for (const m of t.matchAll(/\bR\s*:?\s*(\d{1,3})\s+G\s*:?\s*(\d{1,3})\s+B\s*:?\s*(\d{1,3})\b/g)) all.push(rgbToHex([+m[1], +m[2], +m[3]]));
+  }
+  return [...new Set(all)].filter(h => { const [, sat, l] = hexToHsl(h); return sat > 0.3 && l > 0.06 && l < 0.92; });
+}
+function textBoxes(tc, vp) {
+  return tc.items.filter(i => i.str && i.str.trim()).map(i => {
+    const t = pdfjs.Util.transform(vp.transform, i.transform); const fh = Math.hypot(t[2], t[3]);
+    return { x: t[4], y: t[5] - fh, w: i.width * vp.scale, h: fh * 1.25, fh, str: i.str };
+  });
+}
+function findBlobs(c, boxes) {
+  const W = c.width, H = c.height, g = c.getContext('2d'), d = g.getImageData(0, 0, W, H).data, S = 4, gw = Math.ceil(W / S), gh = Math.ceil(H / S);
+  const px = (x, y) => { const i = (y * W + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  const cnt = new Map(); for (let x = 0; x < W; x += 3) for (const y of [2, H - 3]) { const k = px(x, y).map(v => v >> 4).join(); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  for (let y = 0; y < H; y += 3) for (const x of [2, W - 3]) { const k = px(x, y).map(v => v >> 4).join(); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  const bg = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0].split(',').map(v => +v * 16 + 8);
+  const ink = new Uint8Array(gw * gh);
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (dist(px(x, y), bg) > 70) ink[(y / S | 0) * gw + (x / S | 0)] = 1;
+  for (const b of boxes) for (let y = Math.max(0, b.y / S | 0); y <= Math.min(gh - 1, (b.y + b.h) / S | 0); y++) for (let x = Math.max(0, b.x / S | 0); x <= Math.min(gw - 1, (b.x + b.w) / S | 0); x++) ink[y * gw + x] = 0;
+  const R = 3, dil = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (ink[y * gw + x]) for (let yy = Math.max(0, y - R); yy <= Math.min(gh - 1, y + R); yy++) for (let xx = Math.max(0, x - R); xx <= Math.min(gw - 1, x + R); xx++) dil[yy * gw + xx] = 1;
+  const lab = new Int32Array(gw * gh), out = []; let id = 0;
+  for (let i = 0; i < gw * gh; i++) {
+    if (!dil[i] || lab[i]) continue; id++; const st = [i]; lab[i] = id; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, n = 0;
+    while (st.length) {
+      const j = st.pop(), x = j % gw, y = (j / gw) | 0; if (ink[j]) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      for (const k of [j - 1, j + 1, j - gw, j + gw]) if (k >= 0 && k < gw * gh && dil[k] && !lab[k] && Math.abs((k % gw) - x) <= 1) { lab[k] = id; st.push(k); }
+    }
+    if (n < 30) continue;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    out.push({ x: x0 * S, y: y0 * S, w: bw * S, h: bh * S, fill: n / (bw * bh) });
+  }
+  return { bg, blobs: out };
+}
+function inkStats(c, r, bg) {
+  const g = c.getContext('2d'), d = g.getImageData(r.x, r.y, r.w, r.h).data, cnt = new Map(); let n = 0, sum = 0, sum2 = 0;
+  for (let i = 0; i < d.length; i += 16) { const p = [d[i], d[i + 1], d[i + 2]]; const l = (p[0] + p[1] + p[2]) / 3; sum += l; sum2 += l * l; if (dist(p, bg) < 70) continue; n++; const k = p.map(v => v >> 5).join(); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  const top = [...cnt.entries()].sort((a, b) => b[1] - a[1]); const m = d.length / 16;
+  return { mono: n ? (top[0] ? top[0][1] : 0) / n : 0, top2: n ? ((top[0] ? top[0][1] : 0) + (top[1] ? top[1][1] : 0)) / n : 0, std: Math.sqrt(Math.max(0, sum2 / m - (sum / m) ** 2)), colors: top.length };
+}
+function cutLogo(c, r, bg) {
+  const pad = 6, x = Math.max(0, r.x - pad), y = Math.max(0, r.y - pad), w = Math.min(c.width - x, r.w + pad * 2), h = Math.min(c.height - y, r.h + pad * 2);
+  const o = document.createElement('canvas'); o.width = w; o.height = h; const g = o.getContext('2d'); g.drawImage(c, -x, -y);
+  const id = g.getImageData(0, 0, w, h), d = id.data;
+  let far = 0; for (let i = 0; i < d.length; i += 4) far = Math.max(far, dist([d[i], d[i + 1], d[i + 2]], bg));
+  for (let i = 0; i < d.length; i += 4) {
+    const p = [d[i], d[i + 1], d[i + 2]], a = Math.min(1, Math.max(0, (dist(p, bg) - 20) / Math.max(40, far * 0.75)));
+    if (a <= 0) { d[i + 3] = 0; continue; }
+    for (let k = 0; k < 3; k++) d[i + k] = Math.max(0, Math.min(255, (p[k] - bg[k] * (1 - a)) / a)); d[i + 3] = 255 * a;
+  }
+  g.putImageData(id, 0, 0); return trim(o);
+}
+function coverOk(c) { const s = 64, t = document.createElement('canvas'); t.width = t.height = s; const g = t.getContext('2d'); g.drawImage(c, 0, 0, s, s); const d = g.getImageData(0, 0, s, s).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++; const f = n / (s * s); return f > 0.06 && f < 0.55; }
 async function ingestPdf(buf, name) {
   const doc = await pdfjs.getDocument({ data: buf }).promise;
-  const n = Math.min(doc.numPages, 10);
-  for (let p = 1; p <= n; p++) {
-    const page = await doc.getPage(p);
-    const vp = page.getViewport({ scale: 1 }); const s = 1400 / Math.max(vp.width, vp.height);
-    const v2 = page.getViewport({ scale: s }); const c = document.createElement('canvas'); c.width = v2.width; c.height = v2.height;
-    await page.render({ canvasContext: c.getContext('2d'), viewport: v2 }).promise;
-    addCandidate(c, `${name} · p.${p}`, 'pagina');
-    const tc = await page.getTextContent(); pdfText += ' ' + tc.items.map(i => i.str).join(' ');
+  let title = ''; try { title = ((await doc.getMetadata()).info || {}).Title || ''; } catch { }
+  const T0 = performance.now(); const N = Math.min(doc.numPages, 120), texts = [];
+  for (let p = 1; p <= N; p++) { if (p % 10 === 1) setStatus(`Leggo il PDF… testo ${p}/${N}`); const tc = await (await doc.getPage(p)).getTextContent(); texts.push(tc.items.map(i => i.str).join(' ')); }
+  pdfText += ' ' + texts.join(' ');
+  pdfInfo.name = pdfName(name, title, pdfText) || pdfInfo.name;
+  pdfInfo.hex = [...new Set([...pdfInfo.hex, ...pdfHexes(texts)])];
+  const logoPg = [], fotoPg = []; let payoffPg = -1;
+  texts.forEach((t, i) => {
+    if (/logo|logotip|marchio|wordmark|logotype|brand ?mark|bildmarke|wortmarke|marque/i.test(t)) logoPg.push(i + 1);
+    if (/fotograf|photograph|imagery|immagini|bildwelt|bildsprache/i.test(t)) fotoPg.push(i + 1);
+    if (payoffPg < 0 && /\b(payoff|pay-off|claim|slogan|tagline|motto|baseline)\b/i.test(t) && !/\b(index|indice|contents|sommario|inhalt)\b/i.test(t)) payoffPg = i + 1;
+  });
+  const pages = [...new Set([1, ...logoPg.slice(0, 6), ...(payoffPg > 0 ? [payoffPg] : []), ...fotoPg.slice(0, 3), 2, 3].filter(p => p <= N))].slice(0, 12);
+  console.log('pdf testo', (performance.now() - T0) | 0); let k = 0;
+  const found = [];
+  for (const p of pages) {
+    setStatus(`Leggo il PDF… pagina ${++k} di ${pages.length}`);
+    const page = await doc.getPage(p), vp1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: 1400 / Math.max(vp1.width, vp1.height) });
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    const tc = await page.getTextContent(), boxes = textBoxes(tc, vp);
+    if (p === payoffPg && !pdfInfo.tagline) {
+      const big = boxes.filter(b => !/payoff|claim|slogan|tagline|motto|\d\.\d/i.test(b.str)).sort((a, b) => b.fh - a.fh), mx = big[0] ? big[0].fh : 0;
+      const t = big.filter(b => b.fh > mx * 0.85).sort((a, b) => a.y - b.y || a.x - b.x).map(b => b.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
+      if (t && t.split(' ').length <= 8 && mx > c.height * 0.035) pdfInfo.tagline = t.replace(/^\w/, m => m.toUpperCase());
+      // payoff disegnato in vettoriale: lo cerco tra le virgolette nel testo che lo spiega
+      const q = !pdfInfo.tagline && texts[p - 1].match(/[“"«]([^”"»]{4,40})[”"»]/);
+      if (q && q[1].trim().split(/\s+/).length <= 6) pdfInfo.tagline = q[1].trim().replace(/^\p{Ll}/u, m => m.toUpperCase());
+    }
+    const { bg, blobs } = findBlobs(c, boxes), A = c.width * c.height;
+    for (const b of blobs) {
+      const ar = b.w / b.h, area = b.w * b.h / A, edge = b.x < 6 || b.y < 6 || b.x + b.w > c.width - 6 || b.y + b.h > c.height - 6;
+      const st = inkStats(c, b, bg);
+      if (b.fill > 0.7 && area > 0.08 && st.std > 25 && st.colors > 30) { // fotografia
+        const o = document.createElement('canvas'); o.width = b.w; o.height = b.h; o.getContext('2d').drawImage(c, -b.x, -b.y);
+        found.push({ kind: 'immagine', img: o, score: area, name: `${name} · foto p.${p}` }); continue;
+      }
+      if (b.w < c.width * 0.1 || ar < 1.2 || ar > 9 || b.fill < 0.06 || b.fill > 0.65 || st.top2 < 0.8 || edge) continue;
+      const sat = 0; const score = Math.min(area, 0.12) * (st.mono > 0.85 ? 1.4 : 1) * (logoPg.includes(p) ? 1.5 : 1) * (1 + sat);
+      found.push({ kind: 'logo', page: c, r: b, bg, score: score / (1 + boxes.length / 30), ar, name: `${name} · logo p.${p}`, p });
+    }
   }
+  // stessi loghi su più pagine: tengo una versione per proporzione e colore
+  const logos = found.filter(f => f.kind === 'logo').sort((a, b) => b.score - a.score), kept = [];
+  for (const f of logos) {
+    if (kept.length && f.score < kept[0].score * 0.3) break;
+    f.img = cutLogo(f.page, f.r, f.bg); if (!coverOk(f.img)) continue; const col = extractPalette([f.img])[0] || '';
+    if (kept.some(k => Math.abs(k.ar - f.ar) / f.ar < 0.08 && k.col && col && dist(hexToRgb(k.col), hexToRgb(col)) < 60)) continue;
+    f.col = col; kept.push(f); if (kept.length >= 6) break;
+  }
+  console.log('pdf totale', (performance.now() - T0) | 0);
+  for (const f of kept) state.candidates.push({ img: f.img, name: f.name, kind: 'logo', score: f.score });
+  found.filter(f => f.kind === 'immagine').sort((a, b) => b.score - a.score).slice(0, 6).forEach(f => state.candidates.push({ img: f.img, name: f.name, kind: 'immagine' }));
 }
 async function ingestFile(file) {
   const name = file.name, low = name.toLowerCase();
@@ -611,15 +744,15 @@ function addCandidate(img, name, kind) { state.candidates.push({ img, name, kind
 function autoPick() {
   const cs = state.candidates; if (!cs.length) return;
   const isTransp = (img) => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); g.drawImage(img, 0, 0, 32, 32); const d = g.getImageData(0, 0, 32, 32).data; let t = 0; for (let i = 3; i < d.length; i += 4) if (d[i] < 50) t++; return t > 80; };
-  let logo = cs.find(c => c.kind === 'logo') || cs.find(c => c.kind === 'immagine' && isTransp(c.img));
-  if (logo) state.logo = knockoutWhite(logo.img);
+  let logo = cs.filter(c => c.kind === 'logo').sort((a, b) => (b.score || 0) - (a.score || 0))[0] || cs.find(c => c.kind === 'immagine' && isTransp(c.img));
+  if (logo) { state.logo = knockoutWhite(logo.img); state.logoFrom = logo; }
   const photos = cs.filter(c => c !== logo && c.kind !== 'logo');
   const big = photos.filter(c => c.kind === 'immagine').sort((a, b) => (b.img.width * b.img.height) - (a.img.width * a.img.height))[0];
   state.hero = big ? big.img : null;
   const lp = logo ? extractPalette([state.logo]) : [];
   const op = extractPalette(cs.filter(c => c !== logo).slice(0, 6).map(c => c.img));
   const pal = [...lp, ...op.filter(h => lp.every(l => dist(hexToRgb(l), hexToRgb(h)) > 60))];
-  const hexInText = [...new Set((pdfText.match(/#[0-9a-f]{6}\b/gi) || []).map(s => s.toLowerCase()))];
+  const hexInText = pdfInfo.hex.length ? pdfInfo.hex : [...new Set((pdfText.match(/#[0-9a-f]{6}\b/gi) || []).map(s => s.toLowerCase()))];
   const P = hexInText.length >= 2 ? hexInText.concat(pal) : pal;
   if (P[0]) state.colors.primary = P[0];
   if (P[1]) state.colors.accent = P[1];
@@ -896,11 +1029,11 @@ function syncUI() {
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
   if (state.design) for (const k of ['P', 'S', 'A']) { const b = document.querySelector(`[data-opt=crate][data-val=${k}] i`); if (b) b.style.background = state.design.R[k]; }
   $('#products').checked = state.products;
-  const nv = state.history.length; $('#vn').textContent = nv === 0 ? 'Proposta' : 'Variante ' + (nv + 1); $('#prev').disabled = nv === 0;
+  const nv = state.history.length; $('#vn').textContent = nv === 0 ? 'Proposta' : 'Variante ' + (nv + 1); $('#prev').disabled = nv === 0; $('#next').disabled = !state.future.length;
   renderAreas(); renderFavs();
   // logo preview
   const lp = $('#logo-prev'); lp.innerHTML = '';
-  if (state.logo) { const c = document.createElement('canvas'); c.width = 240; c.height = 90; drawContain(c.getContext('2d'), state.logo, 0, 0, 240, 90); lp.append(c); } else lp.textContent = 'Nessun logo';
+  if (state.logo) { const c = document.createElement('canvas'); c.width = 240; c.height = 90; drawContain(c.getContext('2d'), state.logo, 0, 0, 240, 90); lp.append(c); const L = logoInfo(state.logo); lp.style.background = L.lums && L.lums.length && L.lums.reduce((x, y) => x + y, 0) / L.lums.length > 0.75 ? state.colors.primary : '#fff'; } else { lp.textContent = 'Nessun logo'; lp.style.background = '#fff'; }
   // palette chips
   const pc = $('#pal'); pc.innerHTML = '';
   for (const h of []) {
@@ -935,9 +1068,14 @@ drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.
 async function handleFiles(files) {
   if (!files.length) return;
   setStatus('Leggo il press kit…');
+  paused = true; busy(true);
   for (const f of files) { try { await ingestFile(f); } catch (err) { console.error(err); setStatus('Non riesco a leggere ' + f.name); } }
-  autoPick(); state.logoList = state.candidates.filter(c => c.kind === 'logo' || c.kind === 'immagine'); resetDesign();
+  paused = false; busy(false);
+  autoPick(); state.logoList = state.candidates.filter(c => c.kind === 'logo' || c.kind === 'immagine').sort((a, b) => (b.kind === 'logo') - (a.kind === 'logo') || (b.score || 0) - (a.score || 0)); resetDesign();
   state.photos = state.candidates.filter(c => c.kind === 'immagine' && c !== state.logoFrom && (c.img.width || c.img.naturalWidth) >= 400).map(c => c.img);
+  if (pdfInfo.name) state.brand = pdfInfo.name;
+  if (pdfInfo.tagline && !state.tagline) { state.tagline = pdfInfo.tagline; state.ideas = [pdfInfo.tagline, ...(state.ideas || [])]; }
+  loadFavs();
   if (!state.brand) { const guess = files[0].name.replace(/\.(zip|pdf|png|jpe?g|svg|webp)$/i, '').replace(/[-_]+/g, ' ').replace(/press ?kit|brand ?book|logo/ig, '').trim(); if (guess) state.brand = guess.replace(/\b\w/g, m => m.toUpperCase()); }
   applyAll();
   setStatus(`${state.candidates.length} immagini trovate. Controlla logo e colori${sample ? ', oppure chiedi una proposta a Claude' : ''}.`);
@@ -953,6 +1091,7 @@ $('#go').addEventListener('click', analyzeSite);
 $('#regen').addEventListener('click', rigeneraTutto);
 $('#fav').addEventListener('click', toggleFav);
 $('#prev').addEventListener('click', indietro);
+$('#next').addEventListener('click', avanti);
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyzeSite(); });
 function setRole(k, hex) {
   // congelo i colori attualmente in uso, poi cambio solo il ruolo scelto
@@ -988,7 +1127,7 @@ $('#reset').addEventListener('click', () => {
   resetDesign(); state.locks = Object.fromEntries(Object.keys(state.locks).map(k => [k, false])); state.logoList = [];
   state.photos = []; state.userPhotos = null;
   Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'stampa', crate: 'verniciata', bannerBg: 'auto' });
-  state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
+  state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; pdfInfo = { name: '', tagline: '', hex: [] }; $('#url').value = ''; applyAll(); setStatus('');
 });
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
   const v = { front: [0, 1.6, 6.8], iso: [3.6, 3.1, 6.4], side: [6.5, 1.8, 1.5], top: [0.01, 8, 2] }[b.dataset.view];
@@ -1005,7 +1144,8 @@ $('#shot').addEventListener('click', async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click(); a.remove();
 });
 
-function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
+let paused = false; // durante la lettura del PDF il 3D si ferma: lascia la CPU al parser
+function loop() { if (!paused) { controls.update(); renderer.render(scene, camera); } requestAnimationFrame(loop); }
 resize(); loop();
 document.fonts?.ready?.then(() => applyAll());
 document.fonts?.load?.("700 40px \"DM Sans\"").then(() => applyAll()).catch(() => {});
