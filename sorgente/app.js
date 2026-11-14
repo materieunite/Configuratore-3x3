@@ -92,7 +92,7 @@ function woodTexture(tint) {
 function _woodTexture(tint) {
   const W = 1024, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const base = tint ? mix(tint, '#b98a57', 0.18) : '#c49a68';
+  const base = tint ? mix(tint, '#7a5a3a', 0.06) : '#c49a68'; // cassa verniciata nel colore: la venatura resta appena visibile
   g.fillStyle = base; g.fillRect(0, 0, W, H);
   // doghe orizzontali con venature
   const plank = 128;
@@ -159,19 +159,12 @@ function wallArt(kind) {
   // Solo campiture di colore: sui pannelli a zig-zag foto, loghi e scritte si deformano.
   const c = document.createElement('canvas'); c.width = 1520; c.height = 1280; const g = c.getContext('2d');
   const D = computeDesign(), W = c.width, H = c.height, style = D.pareti.style, [p0, p1, p2] = D.pareti.c;
-  const cols = kind === 'fondo' ? [p0, p1, p2] : kind === 'sinistra' ? [p1, p2, p0] : [p1, p0, p2];
-  const [a, b, d] = cols;
-  if (style === 'tinta') { g.fillStyle = kind === 'fondo' ? a : b; g.fillRect(0, 0, W, H); }
-  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(1, b); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-  else if (style === 'sfumatura3') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, a); gr.addColorStop(0.55, b); gr.addColorStop(1, d); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-  else if (style === 'orizzontale') { // sfumatura da un lato all'altro: le pareti laterali continuano quella di fondo
-    const gr = g.createLinearGradient(0, 0, W, 0); const [x0, x1] = kind === 'sinistra' ? [b, a] : kind === 'destra' ? [a, b] : [b, a];
-    gr.addColorStop(0, x0); gr.addColorStop(1, kind === 'fondo' ? b : x1); if (kind === 'fondo') { gr.addColorStop(0.5, a); } g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-  else if (style === 'rigato') { g.fillStyle = a; g.fillRect(0, 0, W, H); const step = H / 16; g.fillStyle = b; for (let y = H * 0.18; y < H; y += step * 2) g.fillRect(0, y, W, step * 0.55); }
-  else if (style === 'zoccolo') { g.fillStyle = a; g.fillRect(0, 0, W, H); g.fillStyle = b; g.fillRect(0, H * 0.7, W, H * 0.3); g.fillStyle = d; g.fillRect(0, H * 0.68, W, H * 0.025); }
-  else if (style === 'fasce') { const cs = [a, b, d]; for (let i = 0; i < 3; i++) { g.fillStyle = cs[i]; g.fillRect(0, (H / 3) * i, W, H / 3 + 1); } }
-  // fascia in alto nel colore principale: incornicia il banner
-  if (kind === 'fondo') { g.fillStyle = D.pareti.band; g.fillRect(0, 0, W, H * 0.14); }
+  // p0 = colore delle pareti, p1 = secondo colore (laterali, sfumatura, fascia bassa)
+  const lato = kind !== 'fondo';
+  if (style === 'tinta') { g.fillStyle = p0; g.fillRect(0, 0, W, H); }
+  else if (style === 'fondo-laterali') { g.fillStyle = lato ? p1 : p0; g.fillRect(0, 0, W, H); }
+  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, p0); gr.addColorStop(1, p1); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+  else if (style === 'fasce') { g.fillStyle = p0; g.fillRect(0, 0, W, H); g.fillStyle = p1; g.fillRect(0, H * 0.62, W, H * 0.38); }
   return c;
 }
 function wallTexture() {
@@ -230,7 +223,8 @@ const AREAS = [
   { id: 'pareti', nome: 'Pareti stampate', regen: true },
 ];
 // motivi pensati per i pannelli a zig-zag: campiture orizzontali, sfumature verticali, niente diagonali
-const WALL_STYLES = ['sfumatura', 'tinta', 'zoccolo', 'rigato'];
+// dal più semplice: tutte le pareti in un colore, fondo e laterali diversi, sfumatura dall'alto, due fasce larghe
+const WALL_STYLES = ['tinta', 'fondo-laterali', 'sfumatura', 'fasce'];
 state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 };
 state.locks = { colori: false, logo: false, banner: false, cassa: false, alzate: false, nicchie: false, pareti: false };
 state.history = []; state.seen = new Set();
@@ -275,11 +269,12 @@ function computeDesign(seeds = state.seeds) {
   const alzStyles = nPh >= 1 ? ['galleria', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
   const [cBg, cStripe] = opt(cassaList, seeds.cassa);
   const r = rng(seeds.pareti * 13 + 1), rolesW = [R.P, R.S, R.A];
-  const wr = seeds.pareti === 0 ? rolesW : [...rolesW].sort(() => r() - 0.5);
+  const pairs = [[R.P, R.S], [R.P, R.A], [R.S, R.P], [R.A, R.P], [R.S, R.A]];
+  const pr = opt(pairs, Math.floor(seeds.pareti / WALL_STYLES.length)); const wr = [pr[0], pr[1], R.A];
   return {
     R,
     banner: col(opt(bannerList, seeds.banner)),
-    cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null, legno: opt([R.S, R.P, R.A], Math.floor(seeds.cassa / cassaList.length)) },
+    cassa: { bg: col(cBg), stripe: cStripe ? R[cStripe] : null, legno: { P: R.P, S: R.S, A: R.A }[state.crate] || null },
     alzate: { foto: seeds.alzate, style: opt(alzStyles, seeds.alzate), bg: opt([R.S, R.P, R.A], Math.floor(seeds.alzate / alzStyles.length)), piani: opt([R.P, R.S, '#2a2a2a'], Math.floor(seeds.alzate / 2)) },
     nicchie: opt(['alterne', 'sfumate', 'una', 'duo'], seeds.nicchie),
     pareti: { style: opt(WALL_STYLES, seeds.pareti), c: wr, band: R.P },
@@ -466,7 +461,7 @@ function render() {
   else { M.pareti.color.set(state.walls === 'tinta' ? mix(R.P, '#ffffff', 0.85) : '#ecebe6'); M.bordo.color.set(M.pareti.color); }
   M.pareti.needsUpdate = true;
   // cassa in legno (in cache) e prodotti
-  M.cassa.map = woodTexture(state.crate === 'tinta' ? D.cassa.legno : null); M.cassa.needsUpdate = true;
+  M.cassa.map = woodTexture(D.cassa.legno); M.cassa.needsUpdate = true;
   M.prodotti.color.set(R.A);
   model.getObjectByName('prodotti') && (model.getObjectByName('prodotti').visible = state.products);
   syncUI();
@@ -788,13 +783,22 @@ function areaSwatches(id, D) {
   const R = D.R;
   if (id === 'colori') return [R.P, R.S, R.A];
   if (id === 'banner') return [D.banner];
-  if (id === 'cassa') return [D.cassa.bg, D.cassa.stripe, state.crate === 'tinta' ? D.cassa.legno : null].filter(Boolean);
+  if (id === 'cassa') return [D.cassa.bg, D.cassa.stripe].filter(Boolean);
   if (id === 'alzate') return [D.alzate.bg, D.alzate.piani];
   if (id === 'nicchie') return D.nicchie === 'una' ? [R.A] : D.nicchie === 'duo' ? [R.P, R.S] : [R.P, R.A, R.S];
   if (id === 'pareti') return state.walls === 'stampa' ? D.pareti.c : [];
   return [];
 }
 const AREA_NOTE = { colori: 'primario · secondario · accento', logo: '', banner: '', cassa: '', alzate: 'alzata · piano', nicchie: '', pareti: '' };
+function addLogoFiles(files) {
+  for (const f of files) blobToImg(f, f.name).then(img => { const cd = { img, name: f.name, kind: 'logo', src: 'utente', score: 999 }; state.candidates.unshift(cd); (state.logoList = state.logoList || []).unshift(cd); useLogo(cd); state.locks.logo = true; applyAll(); });
+}
+function addPhotoFiles(files) {
+  Promise.all([...files].map(f => blobToImg(f, f.name).then(img => { state.candidates.push({ img, name: f.name, kind: 'immagine', src: 'utente' }); return img; }).catch(() => null))).then(imgs => {
+    imgs = imgs.filter(Boolean); if (!imgs.length) return;
+    state.photos = [...imgs, ...(state.photos || [])]; state.seeds.alzate = 0; state.locks.alzate = false; applyAll();
+  });
+}
 function renderAreas() {
   const box = $('#areas'); if (!box || !state.design) return; box.innerHTML = '';
   for (const a of AREAS) {
@@ -809,7 +813,11 @@ function renderAreas() {
     rg.onclick = () => rigeneraArea(a.id);
     const lk = document.createElement('button'); lk.className = 'ic' + (state.locks[a.id] ? ' on' : ''); lk.textContent = state.locks[a.id] ? '🔒' : '🔓'; lk.title = state.locks[a.id] ? 'Bloccata: Rigenera non la cambia' : 'Blocca questa parte';
     lk.onclick = () => { state.locks[a.id] = !state.locks[a.id]; renderAreas(); };
-    row.append(name, sw, rg, lk); box.append(row);
+    if (a.id === 'logo' || a.id === 'alzate') {
+      const up = document.createElement('button'); up.className = 'ic'; up.textContent = '+'; up.title = a.id === 'logo' ? 'Carica un tuo logo' : 'Carica tue foto per i banchi laterali';
+      up.onclick = () => $(a.id === 'logo' ? '#up-logo' : '#up-foto').click(); row.classList.add('has-up'); row.append(name, sw, up, rg, lk);
+    } else row.append(name, sw, rg, lk);
+    box.append(row);
   }
 }
 // clic sul modello: quale area è
@@ -837,6 +845,7 @@ function syncUI() {
   for (const [k, h] of [['primary', RU.P], ['secondary', RU.S], ['accent', RU.A]]) { const b = document.querySelector(`.role[data-role=${k}]`); if (b) { b.querySelector('i').style.background = h; b.querySelector('span').textContent = h; } }
   $('#brand').value = state.brand; $('#tagline').value = state.tagline;
   document.querySelectorAll('[data-opt]').forEach(b => b.classList.toggle('on', state[b.dataset.opt] === b.dataset.val));
+  if (state.design) for (const k of ['P', 'S', 'A']) { const b = document.querySelector(`[data-opt=crate][data-val=${k}] i`); if (b) b.style.background = state.design.R[k]; }
   $('#products').checked = state.products;
   const nv = state.history.length; $('#vn').textContent = nv === 0 ? 'Proposta' : 'Variante ' + (nv + 1); $('#prev').disabled = nv === 0;
   renderAreas();
@@ -889,6 +898,8 @@ $('#url').addEventListener('change', () => {
   try { const host = new URL(u.startsWith('http') ? u : 'https://' + u).hostname.replace(/^www\./, ''); if (!state.brand) { state.brand = host.split('.')[0].replace(/\b\w/g, m => m.toUpperCase()); applyAll(); } } catch { }
 });
 $('#ai').addEventListener('click', aiDirect);
+$('#up-logo').addEventListener('change', (e) => { addLogoFiles([...e.target.files]); e.target.value = ''; });
+$('#up-foto').addEventListener('change', (e) => { addPhotoFiles([...e.target.files]); e.target.value = ''; });
 $('#go').addEventListener('click', analyzeSite);
 $('#regen').addEventListener('click', rigeneraTutto);
 $('#prev').addEventListener('click', indietro);

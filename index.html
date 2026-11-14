@@ -71,6 +71,8 @@ aside{position:relative}
 .rp-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .rp-add{width:100%;border:1px dashed #c9c4b9;background:#fff;border-radius:7px;padding:7px;font:500 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer}
 #custom-color{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;left:0;top:0}
+.seg .dot{display:inline-block;width:16px;height:16px;border-radius:50%;border:1px solid rgba(0,0,0,.15);vertical-align:-3px}
+.area.has-up{grid-template-columns:104px 1fr 30px 30px 30px}
 </style>
 <script>window.PANELS={"logo_1": {"w": 0.725, "h": 0.676}, "logo_2": {"w": 0.725, "h": 0.137}, "logo_3": {"w": 1.585, "h": 0.409}, "banco_1": {"w": 0.299, "h": 2.493}, "banco_2": {"w": 2.433, "h": 0.244}, "banco_3": {"w": 0.299, "h": 2.493}, "banco_4": {"w": 2.433, "h": 0.244}, "nicchia_1": {"w": 0.239, "h": 0.286}, "nicchia_2": {"w": 0.239, "h": 0.286}, "nicchia_3": {"w": 0.239, "h": 0.286}, "nicchia_4": {"w": 0.239, "h": 0.286}, "nicchia_5": {"w": 0.239, "h": 0.286}, "nicchia_6": {"w": 0.239, "h": 0.286}, "nicchia_7": {"w": 0.239, "h": 0.286}, "nicchia_8": {"w": 0.239, "h": 0.286}, "nicchia_9": {"w": 0.239, "h": 0.286}};</script>
 </head>
@@ -117,7 +119,9 @@ aside{position:relative}
   <div class="lab"><span>3 · Allestimento</span></div>
     <div class="opt"><span>Pareti</span><div class="seg"><button data-opt="walls" data-val="bianco">Cartone bianco</button><button data-opt="walls" data-val="tinta">Tinta</button><button data-opt="walls" data-val="stampa">Stampate ★</button></div></div>
   <p class="hint">★ Premium: pareti stampate nei colori del brand.</p>
-  <div class="opt"><span>Cassa</span><div class="seg"><button data-opt="crate" data-val="naturale">Legno naturale</button><button data-opt="crate" data-val="tinta">Tinto</button></div></div>
+  <div class="opt"><span>Cassa</span><div class="seg"><button data-opt="crate" data-val="naturale">Legno</button><button data-opt="crate" data-val="P" title="Primario"><i class="dot"></i></button><button data-opt="crate" data-val="S" title="Secondario"><i class="dot"></i></button><button data-opt="crate" data-val="A" title="Accento"><i class="dot"></i></button></div></div>
+  <input type="file" id="up-logo" accept=".png,.jpg,.jpeg,.svg,.webp" hidden>
+  <input type="file" id="up-foto" accept=".png,.jpg,.jpeg,.webp" multiple hidden>
   <label class="chk"><input type="checkbox" id="products"> Mostra prodotti sugli scaffali</label>
 
   <div class="lab"><span>4 · Parti dello stand</span><span>↻ rigenera · 🔒 blocca</span></div>
