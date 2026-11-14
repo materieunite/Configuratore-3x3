@@ -161,10 +161,16 @@ function wallArt(kind) {
   const D = computeDesign(), W = c.width, H = c.height, style = D.pareti.style, [p0, p1, p2] = D.pareti.c;
   // p0 = colore delle pareti, p1 = secondo colore (laterali, sfumatura, fascia bassa)
   const lato = kind !== 'fondo';
-  if (style === 'tinta') { g.fillStyle = p0; g.fillRect(0, 0, W, H); }
-  else if (style === 'fondo-laterali') { g.fillStyle = lato ? p1 : p0; g.fillRect(0, 0, W, H); }
-  else if (style === 'sfumatura') { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, p0); gr.addColorStop(1, p1); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-  else if (style === 'fasce') { g.fillStyle = p0; g.fillRect(0, 0, W, H); g.fillStyle = p1; g.fillRect(0, H * 0.62, W, H * 0.38); }
+  const chiaro = (h) => lum(h) < 0.03 ? '#e4e2dd' : mix(h, '#ffffff', 0.82); // tinta chiara del colore (per il nero: grigio cartone)
+  const grad = (y0, y1, c0, c1) => { const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.fillRect(0, y0, W, y1 - y0); };
+  const fascia = H * 0.2; // fascia chiara in alto: alleggerisce la massa di colore e stacca il banner
+  if (style === 'sf-chiaro') grad(0, H, p0, chiaro(p0));                       // colore in alto, sfuma al chiaro in basso
+  else if (style === 'sf-base') grad(0, H, chiaro(p0), p0);                    // chiaro in alto, colore pieno alla base
+  else if (style === 'sf-due') grad(0, H, p0, p1);                             // dal primo al secondo colore
+  else if (style === 'fascia-sf') { g.fillStyle = chiaro(p0); g.fillRect(0, 0, W, fascia); grad(fascia, H, p0, p1); }
+  else if (style === 'fascia-base') { g.fillStyle = chiaro(p0); g.fillRect(0, 0, W, fascia); grad(fascia, H, mix(p0, '#ffffff', 0.35), p0); }
+  else if (style === 'fondo-sf') { if (lato) { g.fillStyle = chiaro(p0); g.fillRect(0, 0, W, H); } else grad(0, H, p0, chiaro(p0)); } // solo il fondo sfumato, laterali chiari
+  else { g.fillStyle = p0; g.fillRect(0, 0, W, H); }
   return c;
 }
 function wallTexture() {
@@ -224,7 +230,7 @@ const AREAS = [
 ];
 // motivi pensati per i pannelli a zig-zag: campiture orizzontali, sfumature verticali, niente diagonali
 // dal più semplice: tutte le pareti in un colore, fondo e laterali diversi, sfumatura dall'alto, due fasce larghe
-const WALL_STYLES = ['tinta', 'fondo-laterali', 'sfumatura', 'fasce'];
+const WALL_STYLES = ['fascia-sf', 'sf-chiaro', 'sf-base', 'fondo-sf', 'fascia-base', 'sf-due'];
 state.seeds = { colori: 0, logo: 0, banner: 0, cassa: 0, alzate: 0, nicchie: 0, pareti: 0 };
 state.locks = { colori: false, logo: false, banner: false, cassa: false, alzate: false, nicchie: false, pareti: false };
 state.history = []; state.seen = new Set();
@@ -266,7 +272,7 @@ function computeDesign(seeds = state.seeds) {
   const cassaList = [['bianco', 'A'], ['P', 'A'], ['bianco', 'P'], ['S', 'P'], ['bianco', null]];
   const nPh = (state.photos || []).length;
   // niente scritte o loghi sopra le foto: le foto del sito hanno spesso già grafiche dentro
-  const alzStyles = nPh >= 1 ? ['galleria', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
+  const alzStyles = state.userPhotos ? ['foto-piena'] : nPh >= 1 ? ['galleria', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
   const [cBg, cStripe] = opt(cassaList, seeds.cassa);
   const r = rng(seeds.pareti * 13 + 1), rolesW = [R.P, R.S, R.A];
   const pairs = [[R.P, R.S], [R.P, R.A], [R.S, R.P], [R.A, R.P], [R.S, R.A]];
@@ -409,6 +415,14 @@ function render() {
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
     let ink = readable(bg);
     if (style === 'foto' && state.hero) { drawCover(g, state.hero, W, H); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H); ink = '#ffffff'; }
+    if (style === 'foto-piena') {
+      // foto caricata dall'utente: a tutto banner, niente sopra. Il ↻ cambia foto (se più d'una) e inquadratura
+      const up = state.userPhotos, k = D.alzate.foto, img = up[(k + (n === 'banco_4' ? 1 : 0)) % up.length];
+      const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, sc = Math.max(W / iw, H / ih), dh = ih * sc, dw = iw * sc;
+      const fy = [0.5, 0.3, 0.7][Math.floor(k / Math.max(1, up.length)) % 3];
+      g.drawImage(img, (W - dw) / 2, -(dh - H) * fy, dw, dh);
+      setPanel(n, c); continue;
+    }
     if (style === 'galleria') {
       // riquadro col logo nel colore del brand + sequenza di foto del sito; ogni ↻ cambia l'ordine delle foto
       const ph = state.photos, side = n === 'banco_4' ? 1 : 0, gap = Math.round(H * 0.06), logoW = Math.round(H * 2.2);
@@ -791,12 +805,12 @@ function areaSwatches(id, D) {
 }
 const AREA_NOTE = { colori: 'primario · secondario · accento', logo: '', banner: '', cassa: '', alzate: 'alzata · piano', nicchie: '', pareti: '' };
 function addLogoFiles(files) {
-  for (const f of files) blobToImg(f, f.name).then(img => { const cd = { img, name: f.name, kind: 'logo', src: 'utente', score: 999 }; state.candidates.unshift(cd); (state.logoList = state.logoList || []).unshift(cd); useLogo(cd); state.locks.logo = true; applyAll(); });
+  for (const f of files) blobToImg(f, f.name).then(img => { const cd = { img, name: f.name, kind: 'logo', src: 'utente', score: 999 }; state.candidates.unshift(cd); (state.logoList = state.logoList || []).unshift(cd); useLogo(cd); applyAll(); });
 }
 function addPhotoFiles(files) {
   Promise.all([...files].map(f => blobToImg(f, f.name).then(img => { state.candidates.push({ img, name: f.name, kind: 'immagine', src: 'utente' }); return img; }).catch(() => null))).then(imgs => {
     imgs = imgs.filter(Boolean); if (!imgs.length) return;
-    state.photos = [...imgs, ...(state.photos || [])]; state.seeds.alzate = 0; state.locks.alzate = false; applyAll();
+    state.userPhotos = [...imgs, ...(state.userPhotos || [])]; state.photos = [...state.userPhotos]; state.seeds.alzate = 0; state.locks.alzate = false; applyAll();
   });
 }
 function renderAreas() {
@@ -865,7 +879,7 @@ function syncUI() {
     const d = document.createElement('div'); d.className = 'cand';
     const c = document.createElement('canvas'); c.width = 96; c.height = 72; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 96, 72); drawContain(g, cd.img, 4, 4, 88, 64);
     const a = document.createElement('button'); a.textContent = state.logoFrom === cd ? '✓ Logo' : 'Logo'; a.className = state.logoFrom === cd ? 'sel' : '';
-    a.onclick = () => { if (!(state.logoList || []).includes(cd)) (state.logoList = state.logoList || []).push(cd); useLogo(cd); state.locks.logo = true; };
+    a.onclick = () => { if (!(state.logoList || []).includes(cd)) (state.logoList = state.logoList || []).push(cd); useLogo(cd); };
     const b = document.createElement('button'); b.textContent = state.heroFrom === cd ? '✓ Foto' : 'Foto'; b.className = state.heroFrom === cd ? 'sel' : '';
     b.onclick = () => { state.hero = cd.img; state.heroFrom = cd; applyAll(); };
     d.classList.toggle('in-use', state.logoFrom === cd || state.heroFrom === cd);
@@ -936,7 +950,7 @@ document.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click',
 $('#products').addEventListener('change', (e) => { state.products = e.target.checked; applyAll(); });
 $('#reset').addEventListener('click', () => {
   resetDesign(); state.locks = Object.fromEntries(Object.keys(state.locks).map(k => [k, false])); state.logoList = [];
-  state.photos = [];
+  state.photos = []; state.userPhotos = null;
   Object.assign(state, { font: null, ideas: [], logoFrom: null, heroFrom: null, brand: '', tagline: '', logo: null, hero: null, candidates: [], palette: [], walls: 'bianco', crate: 'naturale', bannerBg: 'auto' });
   state.colors = { primary: '#1d1d1b', secondary: '#c9a686', accent: '#e85d2a', neutral: '#f4f2ee' }; pdfText = ''; $('#url').value = ''; applyAll(); setStatus('');
 });
