@@ -271,7 +271,8 @@ function computeDesign(seeds = state.seeds) {
   const bannerList = colorful ? ['bianco', 'P', 'S', 'scuro', 'A'] : ['P', 'bianco', 'scuro', 'S', 'A'];
   const cassaList = [['bianco', 'A'], ['P', 'A'], ['bianco', 'P'], ['S', 'P'], ['bianco', null]];
   const nPh = (state.photos || []).length;
-  const alzStyles = nPh >= 2 ? ['galleria', 'foto', 'testo', 'logo', 'blocchi'] : state.hero ? ['foto', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
+  // niente scritte o loghi sopra le foto: le foto del sito hanno spesso già grafiche dentro
+  const alzStyles = nPh >= 1 ? ['galleria', 'testo', 'logo', 'blocchi'] : ['testo', 'logo', 'blocchi'];
   const [cBg, cStripe] = opt(cassaList, seeds.cassa);
   const r = rng(seeds.pareti * 13 + 1), rolesW = [R.P, R.S, R.A];
   const wr = seeds.pareti === 0 ? rolesW : [...rolesW].sort(() => r() - 0.5);
